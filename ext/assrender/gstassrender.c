@@ -31,10 +31,6 @@
  * </refsect2>
  */
 
-/* FIXME 0.11: suppress warnings for deprecated API such as GStaticRecMutex
- * with newer GLib versions (>= 2.31.0) */
-#define GLIB_DISABLE_DEPRECATION_WARNINGS
-
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
@@ -70,17 +66,24 @@ enum
     I420, YV12, AYUV, YUY2, UYVY, v308, Y41B, Y42B, Y444, \
     NV12, NV21, A420, YUV9, YVU9, IYU1, GRAY8 }"
 
+#define ASSRENDER_CAPS GST_VIDEO_CAPS_MAKE(FORMATS)
+
+#define ASSRENDER_ALL_CAPS ASSRENDER_CAPS ";" \
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ALL)
+
+static GstStaticCaps sw_template_caps = GST_STATIC_CAPS (ASSRENDER_CAPS);
+
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (FORMATS))
+    GST_STATIC_CAPS (ASSRENDER_ALL_CAPS)
     );
 
 static GstStaticPadTemplate video_sink_factory =
 GST_STATIC_PAD_TEMPLATE ("video_sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (FORMATS))
+    GST_STATIC_CAPS (ASSRENDER_ALL_CAPS)
     );
 
 static GstStaticPadTemplate text_sink_factory =
@@ -111,10 +114,15 @@ static GstStateChangeReturn gst_ass_render_change_state (GstElement * element,
 #define gst_ass_render_parent_class parent_class
 G_DEFINE_TYPE (GstAssRender, gst_ass_render, GST_TYPE_ELEMENT);
 
-static GstCaps *gst_ass_render_getcaps (GstPad * pad, GstCaps * filter);
+static GstCaps *gst_ass_render_get_videosink_caps (GstPad * pad,
+    GstAssRender * render, GstCaps * filter);
+static GstCaps *gst_ass_render_get_src_caps (GstPad * pad,
+    GstAssRender * render, GstCaps * filter);
 
-static gboolean gst_ass_render_setcaps_video (GstPad * pad, GstCaps * caps);
-static gboolean gst_ass_render_setcaps_text (GstPad * pad, GstCaps * caps);
+static gboolean gst_ass_render_setcaps_video (GstPad * pad,
+    GstAssRender * render, GstCaps * caps);
+static gboolean gst_ass_render_setcaps_text (GstPad * pad,
+    GstAssRender * render, GstCaps * caps);
 
 static GstFlowReturn gst_ass_render_chain_video (GstPad * pad,
     GstObject * parent, GstBuffer * buf);
@@ -420,7 +428,7 @@ gst_ass_render_query_src (GstPad * pad, GstObject * parent, GstQuery * query)
       GstCaps *filter, *caps;
 
       gst_query_parse_caps (query, &filter);
-      caps = gst_ass_render_getcaps (pad, filter);
+      caps = gst_ass_render_get_src_caps (pad, (GstAssRender *) parent, filter);
       gst_query_set_caps_result (query, caps);
       gst_caps_unref (caps);
       res = TRUE;
@@ -491,38 +499,206 @@ gst_ass_render_event_src (GstPad * pad, GstObject * parent, GstEvent * event)
   return ret;
 }
 
+/**
+ * gst_ass_render_add_feature_and_intersect:
+ *
+ * Creates a new #GstCaps containing the (given caps +
+ * given caps feature) + (given caps intersected by the
+ * given filter).
+ *
+ * Returns: the new #GstCaps
+ */
 static GstCaps *
-gst_ass_render_getcaps (GstPad * pad, GstCaps * filter)
+gst_ass_render_add_feature_and_intersect (GstCaps * caps,
+    const gchar * feature, GstCaps * filter)
 {
-  GstAssRender *render = GST_ASS_RENDER (gst_pad_get_parent (pad));
-  GstPad *otherpad;
-  GstCaps *caps;
-  GstCaps *templ;
+  int i, caps_size;
+  GstCaps *new_caps;
 
-  if (pad == render->srcpad)
-    otherpad = render->video_sinkpad;
-  else
-    otherpad = render->srcpad;
+  new_caps = gst_caps_copy (caps);
 
-  templ = gst_pad_get_pad_template_caps (otherpad);
-
-  /* we can do what the peer can */
-  caps = gst_pad_peer_query_caps (otherpad, filter);
-  if (caps) {
-    GstCaps *temp;
-
-    /* filtered against our padtemplate */
-    temp = gst_caps_intersect (caps, templ);
-    gst_caps_unref (caps);
-    gst_caps_unref (templ);
-    /* this is what we can do */
-    caps = temp;
-  } else {
-    /* no peer, our padtemplate is enough then */
-    caps = templ;
+  caps_size = gst_caps_get_size (new_caps);
+  for (i = 0; i < caps_size; i++) {
+    GstCapsFeatures *features = gst_caps_get_features (new_caps, i);
+    if (!gst_caps_features_is_any (features)) {
+      gst_caps_features_add (features, feature);
+    }
   }
 
-  gst_object_unref (render);
+  gst_caps_append (new_caps, gst_caps_intersect_full (caps,
+          filter, GST_CAPS_INTERSECT_FIRST));
+
+  return new_caps;
+}
+
+/**
+ * gst_ass_render_intersect_by_feature:
+ *
+ * Creates a new #GstCaps based on the following filtering rule.
+ *
+ * For each individual caps contained in given caps, if the
+ * caps uses the given caps feature, keep a version of the caps
+ * with the feature and an another one without. Otherwise, intersect
+ * the caps with the given filter.
+ *
+ * Returns: the new #GstCaps
+ */
+static GstCaps *
+gst_ass_render_intersect_by_feature (GstCaps * caps,
+    const gchar * feature, GstCaps * filter)
+{
+  int i, caps_size;
+  GstCaps *new_caps;
+
+  new_caps = gst_caps_new_empty ();
+
+  caps_size = gst_caps_get_size (caps);
+  for (i = 0; i < caps_size; i++) {
+    GstStructure *caps_structure = gst_caps_get_structure (caps, i);
+    GstCapsFeatures *caps_features =
+        gst_caps_features_copy (gst_caps_get_features (caps, i));
+    GstCaps *filtered_caps;
+    GstCaps *simple_caps =
+        gst_caps_new_full (gst_structure_copy (caps_structure), NULL);
+    gst_caps_set_features (simple_caps, 0, caps_features);
+
+    if (gst_caps_features_contains (caps_features, feature)) {
+      gst_caps_append (new_caps, gst_caps_copy (simple_caps));
+
+      gst_caps_features_remove (caps_features, feature);
+      filtered_caps = gst_caps_ref (simple_caps);
+    } else {
+      filtered_caps = gst_caps_intersect_full (simple_caps, filter,
+          GST_CAPS_INTERSECT_FIRST);
+    }
+
+    gst_caps_unref (simple_caps);
+    gst_caps_append (new_caps, filtered_caps);
+  }
+
+  return new_caps;
+}
+
+static GstCaps *
+gst_ass_render_get_videosink_caps (GstPad * pad, GstAssRender * render,
+    GstCaps * filter)
+{
+  GstPad *srcpad = render->srcpad;
+  GstCaps *peer_caps = NULL, *caps = NULL, *assrender_filter = NULL;
+
+  if (filter) {
+    /* filter caps + composition feature + filter caps
+     * filtered by the software caps. */
+    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+    assrender_filter = gst_ass_render_add_feature_and_intersect (filter,
+        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+    gst_caps_unref (sw_caps);
+
+    GST_DEBUG_OBJECT (render, "assrender filter %" GST_PTR_FORMAT,
+        assrender_filter);
+  }
+
+  peer_caps = gst_pad_peer_query_caps (srcpad, assrender_filter);
+
+  if (assrender_filter)
+    gst_caps_unref (assrender_filter);
+
+  if (peer_caps) {
+
+    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
+
+    if (gst_caps_is_any (peer_caps)) {
+
+      /* if peer returns ANY caps, return filtered src pad template caps */
+      caps = gst_caps_copy (gst_pad_get_pad_template_caps (srcpad));
+    } else {
+
+      /* duplicate caps which contains the composition into one version with
+       * the meta and one without. Filter the other caps by the software caps */
+      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+      caps = gst_ass_render_intersect_by_feature (peer_caps,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+      gst_caps_unref (sw_caps);
+    }
+
+    gst_caps_unref (peer_caps);
+
+  } else {
+    /* no peer, our padtemplate is enough then */
+    caps = gst_pad_get_pad_template_caps (pad);
+  }
+
+  if (filter) {
+    GstCaps *intersection = gst_caps_intersect_full (filter, caps,
+        GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (caps);
+    caps = intersection;
+  }
+
+  GST_DEBUG_OBJECT (render, "returning  %" GST_PTR_FORMAT, caps);
+
+  return caps;
+}
+
+static GstCaps *
+gst_ass_render_get_src_caps (GstPad * pad, GstAssRender * render,
+    GstCaps * filter)
+{
+  GstPad *sinkpad = render->video_sinkpad;
+  GstCaps *peer_caps = NULL, *caps = NULL, *assrender_filter = NULL;
+
+  if (filter) {
+    /* duplicate filter caps which contains the composition into one version
+     * with the meta and one without. Filter the other caps by the software
+     * caps */
+    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+    assrender_filter =
+        gst_ass_render_intersect_by_feature (filter,
+        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+    gst_caps_unref (sw_caps);
+  }
+
+  peer_caps = gst_pad_peer_query_caps (sinkpad, assrender_filter);
+
+  if (assrender_filter)
+    gst_caps_unref (assrender_filter);
+
+  if (peer_caps) {
+
+    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
+
+    if (gst_caps_is_any (peer_caps)) {
+
+      /* if peer returns ANY caps, return filtered sink pad template caps */
+      caps = gst_caps_copy (gst_pad_get_pad_template_caps (sinkpad));
+
+    } else {
+
+      /* return upstream caps + composition feature + upstream caps
+       * filtered by the software caps. */
+      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+      caps = gst_ass_render_add_feature_and_intersect (peer_caps,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+      gst_caps_unref (sw_caps);
+    }
+
+    gst_caps_unref (peer_caps);
+
+  } else {
+    /* no peer, our padtemplate is enough then */
+    caps = gst_pad_get_pad_template_caps (pad);
+  }
+
+  if (filter) {
+    GstCaps *intersection;
+
+    intersection =
+        gst_caps_intersect_full (filter, caps, GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (caps);
+    caps = intersection;
+  }
+
+  GST_DEBUG_OBJECT (render, "returning  %" GST_PTR_FORMAT, caps);
 
   return caps;
 }
@@ -589,22 +765,75 @@ blit_bgra_premultiplied (GstAssRender * render, ASS_Image * ass_image,
 }
 
 static gboolean
-gst_ass_render_setcaps_video (GstPad * pad, GstCaps * caps)
+gst_ass_render_can_handle_caps (GstCaps * incaps)
 {
-  GstAssRender *render = GST_ASS_RENDER (gst_pad_get_parent (pad));
+  static GstStaticCaps static_caps = GST_STATIC_CAPS (ASSRENDER_CAPS);
+  gboolean ret;
+  GstCaps *caps;
+
+  caps = gst_static_caps_get (&static_caps);
+  ret = gst_caps_is_subset (incaps, caps);
+  gst_caps_unref (caps);
+
+  return ret;
+}
+
+static gboolean
+gst_ass_render_setcaps_video (GstPad * pad, GstAssRender * render,
+    GstCaps * caps)
+{
   GstQuery *query;
   gboolean ret = FALSE;
   gint par_n = 1, par_d = 1;
   gdouble dar;
   GstVideoInfo info;
   gboolean attach = FALSE;
+  gboolean caps_has_meta = TRUE;
+  GstCapsFeatures *f;
+  GstCaps *original_caps = caps;
 
   if (!gst_video_info_from_caps (&info, caps))
     goto invalid_caps;
 
   render->info = info;
+  gst_caps_ref (caps);
 
+  /* Try to use the overlay meta if possible */
+  f = gst_caps_get_features (caps, 0);
+
+  /* if the caps doesn't have the overlay meta, we query if downstream
+   * accepts it before trying the version without the meta
+   * If upstream already is using the meta then we can only use it */
+  if (!f
+      || !gst_caps_features_contains (f,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION)) {
+    GstCaps *overlay_caps;
+
+    /* In this case we added the meta, but we can work without it
+     * so preserve the original caps so we can use it as a fallback */
+    overlay_caps = gst_caps_copy (caps);
+
+    f = gst_caps_get_features (overlay_caps, 0);
+    gst_caps_features_add (f,
+        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
+
+    ret = gst_pad_peer_query_accept_caps (render->srcpad, overlay_caps);
+    GST_DEBUG_OBJECT (render, "Downstream accepts the overlay meta: %d", ret);
+    if (ret) {
+      gst_caps_unref (caps);
+      caps = overlay_caps;
+
+    } else {
+      /* fallback to the original */
+      gst_caps_unref (overlay_caps);
+      caps_has_meta = FALSE;
+    }
+
+  }
+  GST_DEBUG_OBJECT (render, "Using caps %" GST_PTR_FORMAT, caps);
   ret = gst_pad_set_caps (render->srcpad, caps);
+  gst_caps_unref (caps);
+
   if (!ret)
     goto out;
 
@@ -612,7 +841,7 @@ gst_ass_render_setcaps_video (GstPad * pad, GstCaps * caps)
   render->height = info.height;
 
   query = gst_query_new_allocation (caps, FALSE);
-  if (gst_pad_peer_query (render->srcpad, query)) {
+  if (caps_has_meta && gst_pad_peer_query (render->srcpad, query)) {
     if (gst_query_find_allocation_meta (query,
             GST_VIDEO_OVERLAY_COMPOSITION_META_API_TYPE, NULL))
       attach = TRUE;
@@ -620,6 +849,20 @@ gst_ass_render_setcaps_video (GstPad * pad, GstCaps * caps)
   gst_query_unref (query);
 
   render->attach_compo_to_buffer = attach;
+
+  if (!attach) {
+    if (caps_has_meta) {
+      /* Some elements (fakesink) claim to accept the meta on caps but won't
+         put it in the allocation query result, this leads below
+         check to fail. Prevent this by removing the meta from caps */
+      caps = original_caps;
+      ret = gst_pad_set_caps (render->srcpad, caps);
+      if (!ret)
+        goto out;
+    }
+    if (!gst_ass_render_can_handle_caps (caps))
+      goto unsupported_caps;
+  }
 
   g_mutex_lock (&render->ass_mutex);
   ass_set_frame_size (render->ass_renderer, render->width, render->height);
@@ -651,7 +894,6 @@ gst_ass_render_setcaps_video (GstPad * pad, GstCaps * caps)
   GST_DEBUG_OBJECT (render, "ass renderer setup complete");
 
 out:
-  gst_object_unref (render);
 
   return ret;
 
@@ -662,12 +904,18 @@ invalid_caps:
     ret = FALSE;
     goto out;
   }
+unsupported_caps:
+  {
+    GST_ERROR_OBJECT (render, "Unsupported caps: %" GST_PTR_FORMAT, caps);
+    ret = FALSE;
+    goto out;
+  }
 }
 
 static gboolean
-gst_ass_render_setcaps_text (GstPad * pad, GstCaps * caps)
+gst_ass_render_setcaps_text (GstPad * pad, GstAssRender * render,
+    GstCaps * caps)
 {
-  GstAssRender *render = GST_ASS_RENDER (gst_pad_get_parent (pad));
   GstStructure *structure;
   const GValue *value;
   GstBuffer *priv;
@@ -708,8 +956,6 @@ gst_ass_render_setcaps_text (GstPad * pad, GstCaps * caps)
     ret = TRUE;
   }
   g_mutex_unlock (&render->ass_mutex);
-
-  gst_object_unref (render);
 
   return ret;
 }
@@ -1252,7 +1498,7 @@ gst_ass_render_event_video (GstPad * pad, GstObject * parent, GstEvent * event)
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_ass_render_setcaps_video (pad, caps);
+      ret = gst_ass_render_setcaps_video (pad, render, caps);
       gst_event_unref (event);
       break;
     }
@@ -1336,7 +1582,9 @@ gst_ass_render_query_video (GstPad * pad, GstObject * parent, GstQuery * query)
       GstCaps *filter, *caps;
 
       gst_query_parse_caps (query, &filter);
-      caps = gst_ass_render_getcaps (pad, filter);
+      caps =
+          gst_ass_render_get_videosink_caps (pad, (GstAssRender *) parent,
+          filter);
       gst_query_set_caps_result (query, caps);
       gst_caps_unref (caps);
       res = TRUE;
@@ -1365,7 +1613,7 @@ gst_ass_render_event_text (GstPad * pad, GstObject * parent, GstEvent * event)
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
-      ret = gst_ass_render_setcaps_text (pad, caps);
+      ret = gst_ass_render_setcaps_text (pad, render, caps);
       gst_event_unref (event);
       break;
     }

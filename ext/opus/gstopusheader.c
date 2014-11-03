@@ -96,16 +96,17 @@ gst_opus_enc_create_metadata_buffer (const GstTagList * tags)
 /*
  * (really really) FIXME: move into core (dixit tpm)
  */
-/**
+/*
  * _gst_caps_set_buffer_array:
- * @caps: a #GstCaps
+ * @caps: (transfer full): a #GstCaps
  * @field: field in caps to set
  * @buf: header buffers
  *
  * Adds given buffers to an array of buffers set as the given @field
  * on the given @caps.  List of buffer arguments must be NULL-terminated.
  *
- * Returns: input caps with a streamheader field added, or NULL if some error
+ * Returns: (transfer full): input caps with a streamheader field added, or NULL
+ *     if some error occurred
  */
 static GstCaps *
 _gst_caps_set_buffer_array (GstCaps * caps, const gchar * field,
@@ -143,6 +144,7 @@ _gst_caps_set_buffer_array (GstCaps * caps, const gchar * field,
 
     buf = va_arg (va, GstBuffer *);
   }
+  va_end (va);
 
   gst_structure_set_value (structure, field, &array);
   g_value_unset (&array);
@@ -189,8 +191,8 @@ gst_opus_header_create_caps_from_headers (GstCaps ** caps, GSList ** headers,
       "multistream", G_TYPE_BOOLEAN, multistream, NULL);
   *caps = _gst_caps_set_buffer_array (*caps, "streamheader", buf1, buf2, NULL);
 
-  *headers = g_slist_prepend (*headers, buf2);
-  *headers = g_slist_prepend (*headers, buf1);
+  *headers = g_slist_prepend (*headers, gst_buffer_ref (buf2));
+  *headers = g_slist_prepend (*headers, gst_buffer_ref (buf1));
 }
 
 void
@@ -217,6 +219,9 @@ gst_opus_header_create_caps (GstCaps ** caps, GSList ** headers, gint nchannels,
   buf2 = gst_opus_enc_create_metadata_buffer (tags);
 
   gst_opus_header_create_caps_from_headers (caps, headers, buf1, buf2);
+
+  gst_buffer_unref (buf2);
+  gst_buffer_unref (buf1);
 }
 
 gboolean

@@ -45,12 +45,12 @@
 #include <gst/video/video.h>
 #include "gstintervideosink.h"
 
+#include <string.h>
+
 GST_DEBUG_CATEGORY_STATIC (gst_inter_video_sink_debug_category);
 #define GST_CAT_DEFAULT gst_inter_video_sink_debug_category
 
 /* prototypes */
-
-
 static void gst_inter_video_sink_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
 static void gst_inter_video_sink_get_property (GObject * object,
@@ -61,6 +61,8 @@ static void gst_inter_video_sink_get_times (GstBaseSink * sink,
     GstBuffer * buffer, GstClockTime * start, GstClockTime * end);
 static gboolean gst_inter_video_sink_start (GstBaseSink * sink);
 static gboolean gst_inter_video_sink_stop (GstBaseSink * sink);
+static gboolean gst_inter_video_sink_set_caps (GstBaseSink * sink,
+    GstCaps * caps);
 static GstFlowReturn gst_inter_video_sink_render (GstBaseSink * sink,
     GstBuffer * buffer);
 
@@ -71,17 +73,15 @@ enum
 };
 
 /* pad templates */
-
 static GstStaticPadTemplate gst_inter_video_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("I420"))
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS_ALL))
     );
 
 
 /* class initialization */
-
 G_DEFINE_TYPE (GstInterVideoSink, gst_inter_video_sink, GST_TYPE_BASE_SINK);
 
 static void
@@ -111,6 +111,7 @@ gst_inter_video_sink_class_init (GstInterVideoSinkClass * klass)
   base_sink_class->start = GST_DEBUG_FUNCPTR (gst_inter_video_sink_start);
   base_sink_class->stop = GST_DEBUG_FUNCPTR (gst_inter_video_sink_stop);
   base_sink_class->render = GST_DEBUG_FUNCPTR (gst_inter_video_sink_render);
+  base_sink_class->set_caps = GST_DEBUG_FUNCPTR (gst_inter_video_sink_set_caps);
 
   g_object_class_install_property (gobject_class, PROP_CHANNEL,
       g_param_spec_string ("channel", "Channel",
@@ -180,15 +181,13 @@ gst_inter_video_sink_get_times (GstBaseSink * sink, GstBuffer * buffer,
     if (GST_BUFFER_DURATION_IS_VALID (buffer)) {
       *end = *start + GST_BUFFER_DURATION (buffer);
     } else {
-      if (intervideosink->fps_n > 0) {
+      if (intervideosink->info.fps_n > 0) {
         *end = *start +
-            gst_util_uint64_scale_int (GST_SECOND, intervideosink->fps_d,
-            intervideosink->fps_n);
+            gst_util_uint64_scale_int (GST_SECOND, intervideosink->info.fps_d,
+            intervideosink->info.fps_n);
       }
     }
   }
-
-
 }
 
 static gboolean
@@ -197,6 +196,9 @@ gst_inter_video_sink_start (GstBaseSink * sink)
   GstInterVideoSink *intervideosink = GST_INTER_VIDEO_SINK (sink);
 
   intervideosink->surface = gst_inter_surface_get (intervideosink->channel);
+  g_mutex_lock (&intervideosink->surface->mutex);
+  memset (&intervideosink->surface->video_info, 0, sizeof (GstVideoInfo));
+  g_mutex_unlock (&intervideosink->surface->mutex);
 
   return TRUE;
 }
@@ -211,10 +213,30 @@ gst_inter_video_sink_stop (GstBaseSink * sink)
     gst_buffer_unref (intervideosink->surface->video_buffer);
   }
   intervideosink->surface->video_buffer = NULL;
+  memset (&intervideosink->surface->video_info, 0, sizeof (GstVideoInfo));
   g_mutex_unlock (&intervideosink->surface->mutex);
 
   gst_inter_surface_unref (intervideosink->surface);
   intervideosink->surface = NULL;
+
+  return TRUE;
+}
+
+static gboolean
+gst_inter_video_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
+{
+  GstInterVideoSink *intervideosink = GST_INTER_VIDEO_SINK (sink);
+  GstVideoInfo info;
+
+  if (!gst_video_info_from_caps (&info, caps)) {
+    GST_ERROR_OBJECT (sink, "Failed to parse caps %" GST_PTR_FORMAT, caps);
+    return FALSE;
+  }
+
+  g_mutex_lock (&intervideosink->surface->mutex);
+  intervideosink->surface->video_info = info;
+  intervideosink->info = info;
+  g_mutex_unlock (&intervideosink->surface->mutex);
 
   return TRUE;
 }

@@ -544,12 +544,27 @@ gboolean
 gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
     gboolean trust_delta_flag, guint packet_size)
 {
+  gboolean ret;
+  GstMapInfo map;
+
+  gst_buffer_map (buffer, &map, GST_MAP_READ);
+  ret = gst_asf_parse_packet_from_data (map.data, map.size, buffer, packet,
+      trust_delta_flag, packet_size);
+  gst_buffer_unmap (buffer, &map);
+
+  return ret;
+}
+
+gboolean
+gst_asf_parse_packet_from_data (guint8 * data, gsize size, GstBuffer * buffer,
+    GstAsfPacketInfo * packet, gboolean trust_delta_flag, guint packet_size)
+{
 /* Might be useful in future:
   guint8 rep_data_len_type;
   guint8 mo_number_len_type;
   guint8 mo_offset_type;
 */
-  GstByteReader *reader;
+  GstByteReader reader;
   gboolean ret = TRUE;
   guint8 first = 0;
   guint8 err_length = 0;        /* length of the error fields */
@@ -563,19 +578,16 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
   guint32 send_time = 0;
   guint16 duration = 0;
   gboolean has_keyframe;
-  GstMapInfo map;
 
-  if (packet_size != 0 && gst_buffer_get_size (buffer) != packet_size) {
+  if (packet_size != 0 && size != packet_size) {
     GST_WARNING ("ASF packets should be aligned with buffers");
     return FALSE;
   }
 
-  gst_buffer_map (buffer, &map, GST_MAP_READ);
-  reader = gst_byte_reader_new (map.data, map.size);
+  gst_byte_reader_init (&reader, data, size);
 
-  GST_LOG ("Starting packet parsing, size: %" G_GSIZE_FORMAT,
-      gst_buffer_get_size (buffer));
-  if (!gst_byte_reader_get_uint8 (reader, &first))
+  GST_LOG ("Starting packet parsing, size: %" G_GSIZE_FORMAT, size);
+  if (!gst_byte_reader_get_uint8 (&reader, &first))
     goto error;
 
   if (first & 0x80) {           /* error correction present */
@@ -585,16 +597,16 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
     if (first & 0x60) {
       GST_ERROR ("Error correction data length should be "
           "set to 0 and is reserved for future use.");
-      return FALSE;
+      goto error;
     }
     err_cor_len = (first & 0x0F);
     err_length += err_cor_len;
     GST_DEBUG ("Error correction data length: %d", (gint) err_cor_len);
-    if (!gst_byte_reader_skip (reader, err_cor_len))
+    if (!gst_byte_reader_skip (&reader, err_cor_len))
       goto error;
 
     /* put payload parsing info first byte in aux var */
-    if (!gst_byte_reader_get_uint8 (reader, &aux))
+    if (!gst_byte_reader_get_uint8 (&reader, &aux))
       goto error;
   } else {
     aux = first;
@@ -614,7 +626,7 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
     GST_DEBUG ("Packet contains multiple payloads");
   }
 
-  if (!gst_byte_reader_get_uint8 (reader, &aux))
+  if (!gst_byte_reader_get_uint8 (&reader, &aux))
     goto error;
 
 /*
@@ -625,13 +637,13 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
 
   /* gets the fields lengths */
   GST_LOG ("Getting packet and padding length");
-  if (!gst_byte_reader_get_asf_var_size_field (reader,
+  if (!gst_byte_reader_get_asf_var_size_field (&reader,
           packet_len_type, &packet_len))
     goto error;
-  if (!gst_byte_reader_skip (reader,
+  if (!gst_byte_reader_skip (&reader,
           gst_asf_get_var_size_field_len (seq_len_type)))
     goto error;
-  if (!gst_byte_reader_get_asf_var_size_field (reader,
+  if (!gst_byte_reader_get_asf_var_size_field (&reader,
           padding_len_type, &padd_len))
     goto error;
 
@@ -662,9 +674,9 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
   }
 
   GST_LOG ("Getting send time and duration");
-  if (!gst_byte_reader_get_uint32_le (reader, &send_time))
+  if (!gst_byte_reader_get_uint32_le (&reader, &send_time))
     goto error;
-  if (!gst_byte_reader_get_uint16_le (reader, &duration))
+  if (!gst_byte_reader_get_uint16_le (&reader, &duration))
     goto error;
 
   has_keyframe = FALSE;
@@ -673,9 +685,9 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
     has_keyframe = GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
   } else {
     if (mult_payloads) {
-      ret = gst_asf_parse_mult_payload (reader, &has_keyframe);
+      ret = gst_asf_parse_mult_payload (&reader, &has_keyframe);
     } else {
-      ret = gst_asf_parse_single_payload (reader, &has_keyframe);
+      ret = gst_asf_parse_single_payload (&reader, &has_keyframe);
     }
   }
 
@@ -700,16 +712,12 @@ gst_asf_parse_packet (GstBuffer * buffer, GstAsfPacketInfo * packet,
   packet->seq_field_type = seq_len_type;
   packet->err_cor_len = err_length;
 
-  gst_buffer_unmap (buffer, &map);
-  gst_byte_reader_free (reader);
   return ret;
 
 error:
   ret = FALSE;
   GST_WARNING ("Error while parsing data packet");
 end:
-  gst_buffer_unmap (buffer, &map);
-  gst_byte_reader_free (reader);
   return ret;
 }
 
@@ -762,50 +770,61 @@ gst_asf_parse_file_properties_obj (GstByteReader * reader,
 gboolean
 gst_asf_parse_headers (GstBuffer * buffer, GstAsfFileInfo * file_info)
 {
+  GstMapInfo map;
+  gboolean ret;
+
+  gst_buffer_map (buffer, &map, GST_MAP_READ);
+  ret = gst_asf_parse_headers_from_data (map.data, map.size, file_info);
+  gst_buffer_unmap (buffer, &map);
+
+  return ret;
+}
+
+gboolean
+gst_asf_parse_headers_from_data (guint8 * data, guint size,
+    GstAsfFileInfo * file_info)
+{
   gboolean ret = TRUE;
   guint32 header_objects = 0;
   guint32 i;
-  GstByteReader *reader;
+  GstByteReader reader;
   guint64 object_size;
-  GstMapInfo map;
 
-  gst_buffer_map (buffer, &map, GST_MAP_READ);
-
-  object_size = gst_asf_match_and_peek_obj_size (map.data,
+  object_size = gst_asf_match_and_peek_obj_size (data,
       &(guids[ASF_HEADER_OBJECT_INDEX]));
   if (object_size == 0) {
     GST_WARNING ("ASF: Cannot parse, header guid not found at the beginning "
         " of data");
-    gst_buffer_unmap (buffer, &map);
     return FALSE;
   }
 
-  reader = gst_byte_reader_new (map.data, map.size);
+  gst_byte_reader_init (&reader, data, size);
 
-  if (!gst_byte_reader_skip (reader, ASF_GUID_OBJSIZE_SIZE))
+  if (!gst_byte_reader_skip (&reader, ASF_GUID_OBJSIZE_SIZE))
     goto error;
-  if (!gst_byte_reader_get_uint32_le (reader, &header_objects))
+  if (!gst_byte_reader_get_uint32_le (&reader, &header_objects))
     goto error;
   GST_DEBUG ("ASF: Header has %" G_GUINT32_FORMAT " child"
       " objects", header_objects);
   /* skip reserved bytes */
-  if (!gst_byte_reader_skip (reader, 2))
+  if (!gst_byte_reader_skip (&reader, 2))
     goto error;
 
   /* iterate through childs of header object */
   for (i = 0; i < header_objects; i++) {
     const guint8 *guid = NULL;
     guint64 obj_size = 0;
-    if (!gst_byte_reader_get_data (reader, ASF_GUID_SIZE, &guid))
+
+    if (!gst_byte_reader_get_data (&reader, ASF_GUID_SIZE, &guid))
       goto error;
-    if (!gst_byte_reader_get_uint64_le (reader, &obj_size))
+    if (!gst_byte_reader_get_uint64_le (&reader, &obj_size))
       goto error;
 
     if (gst_asf_match_guid (guid, &guids[ASF_FILE_PROPERTIES_OBJECT_INDEX])) {
-      ret = gst_asf_parse_file_properties_obj (reader, file_info);
+      ret = gst_asf_parse_file_properties_obj (&reader, file_info);
     } else {
       /* we don't know/care about this object */
-      if (!gst_byte_reader_skip (reader, obj_size - ASF_GUID_OBJSIZE_SIZE))
+      if (!gst_byte_reader_skip (&reader, obj_size - ASF_GUID_OBJSIZE_SIZE))
         goto error;
     }
 
@@ -818,8 +837,6 @@ error:
   ret = FALSE;
   GST_WARNING ("ASF: Error while parsing headers");
 end:
-  gst_buffer_unmap (buffer, &map);
-  gst_byte_reader_free (reader);
   return ret;
 }
 

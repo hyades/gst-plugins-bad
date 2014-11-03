@@ -172,6 +172,7 @@ gst_d3dvideosink_init (GstD3DVideoSink * sink)
   sink->create_internal_window = DEFAULT_CREATE_RENDER_WINDOW;
   sink->stream_stop_on_close = DEFAULT_STREAM_STOP_ON_CLOSE;
   sink->enable_navigation_events = DEFAULT_ENABLE_NAVIGATION_EVENTS;
+  sink->d3d.surface = NULL;
 
   g_rec_mutex_init (&sink->lock);
 }
@@ -470,6 +471,10 @@ gst_d3dvideosink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
 
   gst_query_add_allocation_meta (query, GST_VIDEO_META_API_TYPE, NULL);
   gst_query_add_allocation_meta (query, GST_VIDEO_CROP_META_API_TYPE, NULL);
+
+#ifdef DISABLE_BUFFER_POOL
+  return TRUE;
+#endif
 
   GST_OBJECT_LOCK (sink);
   pool = sink->pool ? gst_object_ref (sink->pool) : NULL;

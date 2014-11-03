@@ -25,15 +25,23 @@ include $(top_srcdir)/common/release.mak
 include $(top_srcdir)/common/po.mak
 
 check-valgrind:
-	cd tests/check && make check-valgrind
+	$(MAKE) -C tests/check check-valgrind
 
 if HAVE_GST_CHECK
 check-torture:
-	cd tests/check && make torture
+	$(MAKE) -C tests/check torture
+build-checks:
+	$(MAKE) -C tests/check build-checks
 else
 check-torture:
 	true
+build-checks:
+	true
 endif
+
+win32-update:
+	cp $(top_builddir)/win32/common/config.h-new \
+	    $(top_srcdir)/win32/common/config.h
 
 include $(top_srcdir)/common/coverage/lcov.mak
 
@@ -96,7 +104,8 @@ CRUFT_DIRS = \
 	$(top_srcdir)/gst/shapewipe \
 	$(top_srcdir)/gst/valve \
 	$(top_srcdir)/gst-libs/gst/baseparse \
-	$(top_srcdir)/gst-libs/gst/video \
+	$(top_srcdir)/gst-libs/gst/egl \
+	$(top_srcdir)/gst-libs/gst/signalprocessor \
 	$(top_srcdir)/tests/examples/scaletempo \
 	$(top_srcdir)/tests/examples/shapewipe \
 	$(top_srcdir)/tests/examples/switch \
@@ -104,13 +113,15 @@ CRUFT_DIRS = \
 	$(top_srcdir)/ext/alsaspdif \
 	$(top_srcdir)/ext/amrwbenc \
 	$(top_srcdir)/ext/cog \
+	$(top_srcdir)/ext/eglgles \
 	$(top_srcdir)/ext/ivorbis \
 	$(top_srcdir)/ext/jack \
 	$(top_srcdir)/ext/metadata \
 	$(top_srcdir)/ext/swfdec \
 	$(top_srcdir)/ext/tarkin \
 	$(top_srcdir)/ext/theora \
-	$(top_srcdir)/ext/vp8
+	$(top_srcdir)/ext/vp8 \
+	$(top_srcdir)/sys/mfc
 
 include $(top_srcdir)/common/cruft.mak
 

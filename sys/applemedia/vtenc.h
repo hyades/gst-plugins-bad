@@ -21,8 +21,8 @@
 #define __GST_VTENC_H__
 
 #include <gst/gst.h>
-
-#include "coremediactx.h"
+#include <gst/video/video.h>
+#include <VideoToolbox/VideoToolbox.h>
 
 G_BEGIN_DECLS
 
@@ -43,27 +43,21 @@ struct _GstVTEncoderDetails
   const gchar * name;
   const gchar * element_name;
   const gchar * mimetype;
-  VTFormatId format_id;
+  CMVideoCodecType format_id;
 };
 
 struct _GstVTEncClass
 {
-  GstElementClass parent_class;
+  GstVideoEncoderClass parent_class;
 };
 
 struct _GstVTEnc
 {
-  GstElement parent;
+  GstVideoEncoder parent;
 
   const GstVTEncoderDetails * details;
 
-  GstPad * sinkpad;
-  GstPad * srcpad;
-
-  gint usage;
   guint bitrate;
-
-  GstCoreMediaCtx * ctx;
 
   gboolean dump_properties;
   gboolean dump_attributes;
@@ -72,12 +66,12 @@ struct _GstVTEnc
   gint negotiated_fps_n, negotiated_fps_d;
   gint caps_width, caps_height;
   gint caps_fps_n, caps_fps_d;
+  GstVideoCodecState *input_state;
+  GstVideoInfo video_info;
   VTCompressionSessionRef session;
   CFMutableDictionaryRef options;
 
-  GstBuffer * cur_inbuf;
-  GPtrArray * cur_outbufs;
-  gboolean expect_keyframe;
+  GAsyncQueue * cur_outframes;
 };
 
 void gst_vtenc_register_elements (GstPlugin * plugin);

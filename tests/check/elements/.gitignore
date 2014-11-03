@@ -1,13 +1,17 @@
 .dirstamp
+aiffparse
 asfmux
 assrender
+audiomixer
 autoconvert
 autovideoconvert
 baseaudiovisualizer
 camerabin
 camerabin2
+compositor
 curlfilesink
 curlftpsink
+curlsftpsink
 curlhttpsink
 curlsmtpsink
 deinterleave
@@ -18,6 +22,7 @@ gdpdepay
 gdppay
 h263parse
 h264parse
+hlsdemux_m3u8
 id3mux
 imagecapturebin
 interleave
@@ -43,6 +48,7 @@ rgvolume
 schroenc
 shm
 spectrum
+templatematch
 timidity
 y4menc
 uvch264demux

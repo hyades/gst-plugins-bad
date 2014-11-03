@@ -19,10 +19,10 @@ static GstElement *sink;
 static GstElement *
 setup_curlfilesink (void)
 {
-  GST_DEBUG ("setup_curlfielsink");
+  GST_DEBUG ("setup_curlfilesink");
   sink = gst_check_setup_element ("curlfilesink");
   srcpad = gst_check_setup_src_pad (sink, &srctemplate);
-  gst_pad_set_active (srcpad, TRUE);
+  fail_unless (gst_pad_set_active (srcpad, TRUE));
 
   return sink;
 }
@@ -74,7 +74,7 @@ test_set_and_play_buffer (const gchar * _data)
       gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY,
           data, num_bytes, 0, num_bytes, data, NULL));
 
-  fail_unless (gst_pad_push (srcpad, buffer) == GST_FLOW_OK);
+  fail_unless_equals_int (gst_pad_push (srcpad, buffer), GST_FLOW_OK);
 }
 
 static void
@@ -90,7 +90,7 @@ test_set_and_fail_to_play_buffer (const gchar * _data)
       gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY,
           data, num_bytes, 0, num_bytes, data, NULL));
 
-  fail_unless (gst_pad_push (srcpad, buffer) == GST_FLOW_ERROR);
+  fail_unless_equals_int (gst_pad_push (srcpad, buffer), GST_FLOW_ERROR);
 }
 
 GST_START_TEST (test_properties)
@@ -143,7 +143,7 @@ GST_START_TEST (test_properties)
   /* start playing */
   ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
   caps = gst_caps_from_string ("application/x-gst-check");
-  fail_unless (gst_pad_set_caps (srcpad, caps));
+  gst_check_setup_events (srcpad, sink, caps, GST_FORMAT_BYTES);
 
   /* setup buffer */
   test_set_and_play_buffer (file_contents);
@@ -152,7 +152,7 @@ GST_START_TEST (test_properties)
   g_object_set (G_OBJECT (sink), "location", "newlocation", NULL);
   g_object_get (sink, "location", &res_location, NULL);
 
-  /* verify that locaiton has not been altered */
+  /* verify that location has not been altered */
   fail_unless (strncmp (res_location, location, strlen (location))
       == 0);
   g_free (res_location);
@@ -201,7 +201,7 @@ GST_START_TEST (test_one_file)
   /* start playing */
   ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
   caps = gst_caps_from_string ("application/x-gst-check");
-  fail_unless (gst_pad_set_caps (srcpad, caps));
+  gst_check_setup_events (srcpad, sink, caps, GST_FORMAT_BYTES);
 
   /* setup buffer */
   test_set_and_play_buffer (file_content);
@@ -251,7 +251,7 @@ GST_START_TEST (test_one_big_file)
   /* start playing */
   ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
   caps = gst_caps_from_string ("application/x-gst-check");
-  fail_unless (gst_pad_set_caps (srcpad, caps));
+  gst_check_setup_events (srcpad, sink, caps, GST_FORMAT_BYTES);
 
   /* setup first buffer */
   test_set_and_play_buffer (file_line1);
@@ -306,7 +306,7 @@ GST_START_TEST (test_two_files)
   /* start playing */
   ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
   caps = gst_caps_from_string ("application/x-gst-check");
-  fail_unless (gst_pad_set_caps (srcpad, caps));
+  gst_check_setup_events (srcpad, sink, caps, GST_FORMAT_BYTES);
 
   /* setup first buffer - content of the first file */
   test_set_and_play_buffer (file_content1);
@@ -362,7 +362,7 @@ GST_START_TEST (test_create_dirs)
   /* start playing */
   ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
   caps = gst_caps_from_string ("application/x-gst-check");
-  fail_unless (gst_pad_set_caps (srcpad, caps));
+  gst_check_setup_events (srcpad, sink, caps, GST_FORMAT_BYTES);
 
   /* setup buffer */
   test_set_and_play_buffer (file_content);
@@ -419,7 +419,7 @@ GST_START_TEST (test_missing_path)
   /* start playing */
   ASSERT_SET_STATE (sink, GST_STATE_PLAYING, GST_STATE_CHANGE_ASYNC);
   caps = gst_caps_from_string ("application/x-gst-check");
-  fail_unless (gst_pad_set_caps (srcpad, caps));
+  gst_check_setup_events (srcpad, sink, caps, GST_FORMAT_BYTES);
 
   /* setup & play buffer which should fail due to the missing path */
   test_set_and_fail_to_play_buffer (file_content);

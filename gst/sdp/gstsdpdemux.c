@@ -39,17 +39,11 @@
  * ]| Establish a connection to an HTTP server that contains an SDP session description
  * that gets parsed by sdpdemux and send the raw RTP packets to a fakesink.
  * </refsect2>
- *
- * Last reviewed on 2007-10-01 (0.10.6)
  */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-
-/* FIXME 0.11: suppress warnings for deprecated API such as GStaticRecMutex
- * with newer GLib versions (>= 2.31.0) */
-#define GLIB_DISABLE_DEPRECATION_WARNINGS
 
 #include "gstsdpdemux.h"
 
@@ -1399,6 +1393,7 @@ gst_sdp_demux_start (GstSDPDemux * demux)
   }
   GST_SDP_STREAM_UNLOCK (demux);
   gst_sdp_message_uninit (&sdp);
+  g_free (data);
 
   return TRUE;
 
@@ -1407,6 +1402,7 @@ done:
   {
     GST_SDP_STREAM_UNLOCK (demux);
     gst_sdp_message_uninit (&sdp);
+    g_free (data);
     return FALSE;
   }
 transport_failed:

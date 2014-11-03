@@ -35,6 +35,8 @@
 
 #include "parsechannels.h"
 
+#include <linux/dvb/frontend.h>
+
 GST_DEBUG_CATEGORY_EXTERN (dvb_base_bin_debug);
 #define GST_CAT_DEFAULT dvb_base_bin_debug
 
@@ -94,8 +96,17 @@ parse_channels_conf_from_file (GstElement * dvbbasebin, const gchar * filename,
           g_hash_table_insert (params, g_strdup (satellite[j - 2]),
               g_strdup (fields[j]));
         }
-        g_hash_table_insert (params, g_strdup ("frequency"),
-            g_strdup_printf ("%d", atoi (fields[1]) * 1000));
+        /**
+         * Some ZAP format variations store freqs in MHz
+         * but we internally use kHz for DVB-S/S2.
+         */
+        if (strlen (fields[1]) < 6) {
+          g_hash_table_insert (params, g_strdup ("frequency"),
+              g_strdup_printf ("%d", atoi (fields[1]) * 1000));
+        } else {
+          g_hash_table_insert (params, g_strdup ("frequency"),
+              g_strdup_printf ("%d", atoi (fields[1])));
+        }
         parsed = TRUE;
       } else if (numfields == 13) {
         /* terrestrial */
@@ -226,6 +237,8 @@ set_properties_for_channel (GstElement * dvbbasebin,
   if (strcmp (type, "terrestrial") == 0) {
     gchar *val;
 
+    g_object_set (dvbbasebin, "delsys", SYS_DVBT, NULL);
+
     val = g_hash_table_lookup (params, "inversion");
     if (strcmp (val, "INVERSION_OFF") == 0)
       g_object_set (dvbbasebin, "inversion", 0, NULL);
@@ -342,6 +355,8 @@ set_properties_for_channel (GstElement * dvbbasebin,
 
     ret = TRUE;
 
+    g_object_set (dvbbasebin, "delsys", SYS_DVBS, NULL);
+
     val = g_hash_table_lookup (params, "polarity");
     if (val)
       g_object_set (dvbbasebin, "polarity", val, NULL);
@@ -359,6 +374,8 @@ set_properties_for_channel (GstElement * dvbbasebin,
       ret = FALSE;
   } else if (strcmp (type, "cable") == 0) {
     gchar *val;
+
+    g_object_set (dvbbasebin, "delsys", SYS_DVBC_ANNEX_A, NULL);
 
     ret = TRUE;
     val = g_hash_table_lookup (params, "symbol-rate");
@@ -411,6 +428,8 @@ set_properties_for_channel (GstElement * dvbbasebin,
     gchar *val;
 
     ret = TRUE;
+
+    g_object_set (dvbbasebin, "delsys", SYS_ATSC, NULL);
 
     val = g_hash_table_lookup (params, "modulation");
     if (strcmp (val, "QAM_64") == 0)

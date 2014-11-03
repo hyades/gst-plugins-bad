@@ -63,6 +63,7 @@
 
 #include <gst/gst.h>
 
+#include "../../gst-libs/gst/gst-i18n-plugin.h"
 #include "gstopencvutils.h"
 #include "gsttemplatematch.h"
 
@@ -91,13 +92,13 @@ enum
 static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("RGB"))
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("BGR"))
     );
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("RGB"))
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("BGR"))
     );
 
 G_DEFINE_TYPE (GstTemplateMatch, gst_template_match, GST_TYPE_ELEMENT);
@@ -113,7 +114,8 @@ static gboolean gst_template_match_handle_sink_event (GstPad * pad,
 static GstFlowReturn gst_template_match_chain (GstPad * pad, GstObject * parent,
     GstBuffer * buf);
 
-static void gst_template_match_load_template (GstTemplateMatch * filter);
+static void gst_template_match_load_template (GstTemplateMatch * filter,
+    gchar * template);
 static void gst_template_match_match (IplImage * input, IplImage * template,
     IplImage * dist_image, double *best_res, CvPoint * best_pos, int method);
 
@@ -169,8 +171,10 @@ gst_template_match_init (GstTemplateMatch * filter)
       GST_DEBUG_FUNCPTR (gst_template_match_handle_sink_event));
   gst_pad_set_chain_function (filter->sinkpad,
       GST_DEBUG_FUNCPTR (gst_template_match_chain));
+  GST_PAD_SET_PROXY_CAPS (filter->sinkpad);
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
+  GST_PAD_SET_PROXY_CAPS (filter->srcpad);
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
@@ -180,7 +184,6 @@ gst_template_match_init (GstTemplateMatch * filter)
   filter->cvDistImage = NULL;
   filter->cvImage = NULL;
   filter->method = DEFAULT_METHOD;
-  gst_template_match_load_template (filter);
 }
 
 static void
@@ -191,6 +194,7 @@ gst_template_match_set_property (GObject * object, guint prop_id,
 
   switch (prop_id) {
     case PROP_METHOD:
+      GST_OBJECT_LOCK (filter);
       switch (g_value_get_int (value)) {
         case 0:
           filter->method = CV_TM_SQDIFF;
@@ -211,13 +215,15 @@ gst_template_match_set_property (GObject * object, guint prop_id,
           filter->method = CV_TM_CCOEFF_NORMED;
           break;
       }
+      GST_OBJECT_UNLOCK (filter);
       break;
     case PROP_TEMPLATE:
-      filter->template = (char *) g_value_get_string (value);
-      gst_template_match_load_template (filter);
+      gst_template_match_load_template (filter, g_value_dup_string (value));
       break;
     case PROP_DISPLAY:
+      GST_OBJECT_LOCK (filter);
       filter->display = g_value_get_boolean (value);
+      GST_OBJECT_UNLOCK (filter);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -266,6 +272,9 @@ gst_template_match_handle_sink_event (GstPad * pad, GstObject * parent,
       gst_event_parse_caps (event, &caps);
       gst_video_info_from_caps (&info, caps);
 
+      if (filter->cvImage) {
+        cvReleaseImageHeader (&filter->cvImage);
+      }
       filter->cvImage =
           cvCreateImageHeader (cvSize (info.width, info.height), IPL_DEPTH_8U,
           3);
@@ -288,6 +297,7 @@ gst_template_match_finalize (GObject * object)
   GstTemplateMatch *filter;
   filter = GST_TEMPLATE_MATCH (object);
 
+  g_free (filter->template);
   if (filter->cvImage) {
     cvReleaseImageHeader (&filter->cvImage);
   }
@@ -311,12 +321,11 @@ gst_template_match_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   CvPoint best_pos;
   double best_res;
   GstMapInfo info;
+  GstMessage *m = NULL;
 
   filter = GST_TEMPLATE_MATCH (parent);
 
-  /* FIXME Why template == NULL returns OK?
-   * shouldn't it be a passthrough instead? */
-  if ((!filter) || (!buf) || filter->template == NULL) {
+  if ((!filter) || (!buf)) {
     return GST_FLOW_OK;
   }
   GST_LOG_OBJECT (filter, "Buffer size %u", (guint) gst_buffer_get_size (buf));
@@ -325,7 +334,8 @@ gst_template_match_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   gst_buffer_map (buf, &info, GST_MAP_READWRITE);
   filter->cvImage->imageData = (char *) info.data;
 
-  if (!filter->cvDistImage) {
+  GST_OBJECT_LOCK (filter);
+  if (filter->cvTemplateImage && !filter->cvDistImage) {
     if (filter->cvTemplateImage->width > filter->cvImage->width) {
       GST_WARNING ("Template Image is wider than input image");
     } else if (filter->cvTemplateImage->height > filter->cvImage->height) {
@@ -348,7 +358,6 @@ gst_template_match_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
   }
   if (filter->cvTemplateImage && filter->cvImage && filter->cvDistImage) {
     GstStructure *s;
-    GstMessage *m;
 
     gst_template_match_match (filter->cvImage, filter->cvTemplateImage,
         filter->cvDistImage, &best_res, &best_pos, filter->method);
@@ -361,21 +370,34 @@ gst_template_match_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
         "result", G_TYPE_DOUBLE, best_res, NULL);
 
     m = gst_message_new_element (GST_OBJECT (filter), s);
-    gst_element_post_message (GST_ELEMENT (filter), m);
 
     if (filter->display) {
       CvPoint corner = best_pos;
+      CvScalar color;
+      if (filter->method == CV_TM_SQDIFF_NORMED
+          || filter->method == CV_TM_CCORR_NORMED
+          || filter->method == CV_TM_CCOEFF_NORMED) {
+        /* Yellow growing redder as match certainty approaches 1.0.  This can
+           only be applied with method == *_NORMED as the other match methods
+           aren't normalized to be in range 0.0 - 1.0 */
+        color = CV_RGB (255, 255 - pow (255, best_res), 32);
+      } else {
+        color = CV_RGB (255, 32, 32);
+      }
 
       buf = gst_buffer_make_writable (buf);
 
       corner.x += filter->cvTemplateImage->width;
       corner.y += filter->cvTemplateImage->height;
-      cvRectangle (filter->cvImage, best_pos, corner, CV_RGB (255, 32, 32), 3,
-          8, 0);
+      cvRectangle (filter->cvImage, best_pos, corner, color, 3, 8, 0);
     }
 
   }
+  GST_OBJECT_UNLOCK (filter);
 
+  if (m) {
+    gst_element_post_message (GST_ELEMENT (filter), m);
+  }
   return gst_pad_push (filter->srcpad, buf);
 }
 
@@ -402,18 +424,40 @@ gst_template_match_match (IplImage * input, IplImage * template,
 }
 
 
+/* We take ownership of template here */
 static void
-gst_template_match_load_template (GstTemplateMatch * filter)
+gst_template_match_load_template (GstTemplateMatch * filter, gchar * template)
 {
-  if (filter->template) {
-    filter->cvTemplateImage =
-        cvLoadImage (filter->template, CV_LOAD_IMAGE_COLOR);
+  gchar *oldTemplateFilename = NULL;
+  IplImage *oldTemplateImage = NULL, *newTemplateImage = NULL, *oldDistImage =
+      NULL;
 
-    if (!filter->cvTemplateImage) {
-      GST_WARNING ("Couldn't load template image: %s. error: %s",
-          filter->template, g_strerror (errno));
+  if (template) {
+    newTemplateImage = cvLoadImage (template, CV_LOAD_IMAGE_COLOR);
+    if (!newTemplateImage) {
+      /* Unfortunately OpenCV doesn't seem to provide any way of finding out
+         why the image load failed, so we can't be more specific than FAILED: */
+      GST_ELEMENT_WARNING (filter, RESOURCE, FAILED,
+          (_("OpenCV failed to load template image")),
+          ("While attempting to load template '%s'", template));
+      g_free (template);
+      template = NULL;
     }
   }
+
+  GST_OBJECT_LOCK (filter);
+  oldTemplateFilename = filter->template;
+  filter->template = template;
+  oldTemplateImage = filter->cvTemplateImage;
+  filter->cvTemplateImage = newTemplateImage;
+  oldDistImage = filter->cvDistImage;
+  /* This will be recreated in the chain function as required: */
+  filter->cvDistImage = NULL;
+  GST_OBJECT_UNLOCK (filter);
+
+  cvReleaseImage (&oldDistImage);
+  cvReleaseImage (&oldTemplateImage);
+  g_free (oldTemplateFilename);
 }
 
 

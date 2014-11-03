@@ -34,7 +34,8 @@ G_BEGIN_DECLS
 #define MAX_HRD_NUM_LEAKY_BUCKETS 31
 
 /**
- * @GST_VC1_BFRACTION_BASIS: The @bfraction variable should be divided
+ * GST_VC1_BFRACTION_BASIS:
+ * The @bfraction variable should be divided
  * by this constant to have the actual value.
  */
 #define GST_VC1_BFRACTION_BASIS 840
@@ -83,8 +84,8 @@ typedef enum
 typedef enum
 {
     GST_VC1_LEVEL_LOW    = 0,    /* Simple/Main profile low level */
-    GST_VC1_LEVEL_MEDIUM = 1,    /* Simple/Main profile medium level */
-    GST_VC1_LEVEL_HIGH   = 2,   /* Main profile high level */
+    GST_VC1_LEVEL_MEDIUM = 2,    /* Simple/Main profile medium level */
+    GST_VC1_LEVEL_HIGH   = 4,   /* Main profile high level */
 
     GST_VC1_LEVEL_L0    = 0,    /* Advanced profile level 0 */
     GST_VC1_LEVEL_L1    = 1,    /* Advanced profile level 1 */

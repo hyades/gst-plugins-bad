@@ -48,12 +48,11 @@ GST_DEBUG_CATEGORY_STATIC (gst_inter_sub_src_debug_category);
 #define GST_CAT_DEFAULT gst_inter_sub_src_debug_category
 
 /* prototypes */
-
-
 static void gst_inter_sub_src_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
 static void gst_inter_sub_src_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
+static void gst_inter_sub_src_finalize (GObject * object);
 
 static gboolean gst_inter_sub_src_start (GstBaseSrc * src);
 static gboolean gst_inter_sub_src_stop (GstBaseSrc * src);
@@ -71,7 +70,6 @@ enum
 };
 
 /* pad templates */
-
 static GstStaticPadTemplate gst_inter_sub_src_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
@@ -79,9 +77,8 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_STATIC_CAPS ("application/unknown")
     );
 
-
 /* class initialization */
-
+#define parent_class gst_inter_sub_src_parent_class
 G_DEFINE_TYPE (GstInterSubSrc, gst_inter_sub_src, GST_TYPE_BASE_SRC);
 
 static void
@@ -105,6 +102,7 @@ gst_inter_sub_src_class_init (GstInterSubSrcClass * klass)
 
   gobject_class->set_property = gst_inter_sub_src_set_property;
   gobject_class->get_property = gst_inter_sub_src_get_property;
+  gobject_class->finalize = gst_inter_sub_src_finalize;
   base_src_class->start = GST_DEBUG_FUNCPTR (gst_inter_sub_src_start);
   base_src_class->stop = GST_DEBUG_FUNCPTR (gst_inter_sub_src_stop);
   base_src_class->get_times = GST_DEBUG_FUNCPTR (gst_inter_sub_src_get_times);
@@ -119,10 +117,6 @@ gst_inter_sub_src_class_init (GstInterSubSrcClass * klass)
 static void
 gst_inter_sub_src_init (GstInterSubSrc * intersubsrc)
 {
-
-  intersubsrc->srcpad =
-      gst_pad_new_from_static_template (&gst_inter_sub_src_src_template, "src");
-
   gst_base_src_set_format (GST_BASE_SRC (intersubsrc), GST_FORMAT_TIME);
   gst_base_src_set_live (GST_BASE_SRC (intersubsrc), TRUE);
 
@@ -162,6 +156,16 @@ gst_inter_sub_src_get_property (GObject * object, guint property_id,
   }
 }
 
+static void
+gst_inter_sub_src_finalize (GObject * object)
+{
+  GstInterSubSrc *intersubsrc = GST_INTER_SUB_SRC (object);
+
+  g_free (intersubsrc->channel);
+  intersubsrc->channel = NULL;
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
 
 static gboolean
 gst_inter_sub_src_start (GstBaseSrc * src)
@@ -192,9 +196,7 @@ static void
 gst_inter_sub_src_get_times (GstBaseSrc * src, GstBuffer * buffer,
     GstClockTime * start, GstClockTime * end)
 {
-  GstInterSubSrc *intersubsrc = GST_INTER_SUB_SRC (src);
-
-  GST_DEBUG_OBJECT (intersubsrc, "get_times");
+  GST_DEBUG_OBJECT (src, "get_times");
 
   /* for live sources, sync on the timestamp of the buffer */
   if (gst_base_src_is_live (src)) {
@@ -214,7 +216,6 @@ gst_inter_sub_src_get_times (GstBaseSrc * src, GstBuffer * buffer,
     *end = -1;
   }
 }
-
 
 static GstFlowReturn
 gst_inter_sub_src_create (GstBaseSrc * src, guint64 offset, guint size,

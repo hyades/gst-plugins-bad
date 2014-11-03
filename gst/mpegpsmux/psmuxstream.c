@@ -147,6 +147,7 @@ psmux_stream_new (PsMux * mux, PsMuxStreamType stream_type)
   if (stream->stream_id == 0) {
     g_critical ("Number of elementary streams of type %04x exceeds maximum",
         stream->stream_type);
+    g_slice_free (PsMuxStream, stream);
     return NULL;
   }
 
@@ -189,8 +190,8 @@ psmux_stream_new (PsMux * mux, PsMuxStreamType stream_type)
       stream->max_buffer_size = 400 * 1024;
     else if (stream->is_audio_stream)
       stream->max_buffer_size = 4 * 1024;
-    else                        /* Unknown */
-      stream->max_buffer_size = 4 * 1024;
+    else
+      g_assert_not_reached ();
   }
 
   return stream;

@@ -3,6 +3,7 @@
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2008 Michael Sheldon <mike@mikeasoft.com>
+ * Copyright (C) 2011 Robert Jobbagy <jobbagy.robert@gmail.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -49,6 +50,8 @@
 #include <gst/gst.h>
 #include <cv.h>
 
+#include "gstopencvvideofilter.h"
+
 #if (CV_MAJOR_VERSION >= 2) && (CV_MINOR_VERSION >= 2)
 #include <opencv2/objdetect/objdetect.hpp>
 #endif
@@ -70,22 +73,26 @@ typedef struct _GstFaceBlurClass GstFaceBlurClass;
 
 struct _GstFaceBlur
 {
-  GstElement element;
+  GstOpencvVideoFilter element;
 
-  GstPad *sinkpad, *srcpad;
-
-  gboolean display;
+  gboolean sent_profile_load_failed_msg;
 
   gchar *profile;
+  gboolean display;
+  gdouble scale_factor;
+  gint min_neighbors;
+  gint flags;
+  gint min_size_width;
+  gint min_size_height;
 
-  IplImage *cvImage, *cvGray;
+  IplImage *cvGray;
   CvHaarClassifierCascade *cvCascade;
   CvMemStorage *cvStorage;
 };
 
 struct _GstFaceBlurClass
 {
-  GstElementClass parent_class;
+  GstOpencvVideoFilterClass parent_class;
 };
 
 GType gst_face_blur_get_type (void);

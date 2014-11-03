@@ -29,7 +29,8 @@
 #  include "config.h"
 #endif
 
-#include <gst/base/gstbytereader.h>
+#include <gst/base/base.h>
+#include <gst/pbutils/pbutils.h>
 #include "gsth263parse.h"
 
 #include <string.h>
@@ -59,6 +60,8 @@ static gboolean gst_h263_parse_sink_event (GstBaseParse * parse,
     GstEvent * event);
 static GstFlowReturn gst_h263_parse_handle_frame (GstBaseParse * parse,
     GstBaseParseFrame * frame, gint * skipsize);
+static GstFlowReturn gst_h263_parse_pre_push_frame (GstBaseParse * parse,
+    GstBaseParseFrame * frame);
 static GstCaps *gst_h263_parse_get_sink_caps (GstBaseParse * parse,
     GstCaps * filter);
 
@@ -85,12 +88,15 @@ gst_h263_parse_class_init (GstH263ParseClass * klass)
   parse_class->stop = GST_DEBUG_FUNCPTR (gst_h263_parse_stop);
   parse_class->sink_event = GST_DEBUG_FUNCPTR (gst_h263_parse_sink_event);
   parse_class->handle_frame = GST_DEBUG_FUNCPTR (gst_h263_parse_handle_frame);
+  parse_class->pre_push_frame =
+      GST_DEBUG_FUNCPTR (gst_h263_parse_pre_push_frame);
   parse_class->get_sink_caps = GST_DEBUG_FUNCPTR (gst_h263_parse_get_sink_caps);
 }
 
 static void
 gst_h263_parse_init (GstH263Parse * h263parse)
 {
+  GST_PAD_SET_ACCEPT_INTERSECT (GST_BASE_PARSE_SINK_PAD (h263parse));
 }
 
 static gboolean
@@ -105,6 +111,8 @@ gst_h263_parse_start (GstBaseParse * parse)
   h263parse->level = -1;
 
   h263parse->state = PARSING;
+
+  h263parse->sent_codec_tag = FALSE;
 
   gst_base_parse_set_min_frame_size (parse, 4);
 
@@ -180,9 +188,9 @@ static void
 gst_h263_parse_set_src_caps (GstH263Parse * h263parse,
     const H263Params * params)
 {
-  GstStructure *st;
+  GstStructure *st = NULL;
   GstCaps *caps, *sink_caps;
-  gint fr_num, fr_denom;
+  gint fr_num, fr_denom, par_num, par_denom;
 
   g_assert (h263parse->state == PASSTHROUGH || h263parse->state == GOT_HEADER);
 
@@ -210,6 +218,18 @@ gst_h263_parse_set_src_caps (GstH263Parse * h263parse,
   if (params->width && params->height)
     gst_caps_set_simple (caps, "width", G_TYPE_INT, params->width,
         "height", G_TYPE_INT, params->height, NULL);
+
+  if (st != NULL
+      && gst_structure_get_fraction (st, "pixel-aspect-ratio", &par_num,
+          &par_denom)) {
+    /* Got it in caps - nothing more to do */
+    GST_DEBUG_OBJECT (h263parse, "sink caps override PAR");
+  } else {
+    /* Caps didn't have the framerate - get it from params */
+    gst_h263_parse_get_par (params, &par_num, &par_denom);
+  }
+  gst_caps_set_simple (caps, "pixel-aspect-ratio", GST_TYPE_FRACTION,
+      par_num, par_denom, NULL);
 
   if (h263parse->state == GOT_HEADER) {
     gst_caps_set_simple (caps,
@@ -349,6 +369,19 @@ more:
   return res;
 }
 
+static void
+remove_fields (GstCaps * caps)
+{
+  guint i, n;
+
+  n = gst_caps_get_size (caps);
+  for (i = 0; i < n; i++) {
+    GstStructure *s = gst_caps_get_structure (caps, i);
+
+    gst_structure_remove_field (s, "parsed");
+  }
+}
+
 static GstCaps *
 gst_h263_parse_get_sink_caps (GstBaseParse * parse, GstCaps * filter)
 {
@@ -356,28 +389,23 @@ gst_h263_parse_get_sink_caps (GstBaseParse * parse, GstCaps * filter)
   GstCaps *res;
 
   templ = gst_pad_get_pad_template_caps (GST_BASE_PARSE_SINK_PAD (parse));
-  peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), filter);
+  if (filter) {
+    GstCaps *fcopy = gst_caps_copy (filter);
+    /* Remove the fields we convert */
+    remove_fields (fcopy);
+    peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), fcopy);
+    gst_caps_unref (fcopy);
+  } else
+    peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), NULL);
 
   if (peercaps) {
-    guint i, n;
-
     /* Remove parsed field */
     peercaps = gst_caps_make_writable (peercaps);
-    n = gst_caps_get_size (peercaps);
-    for (i = 0; i < n; i++) {
-      GstStructure *s = gst_caps_get_structure (peercaps, i);
-      gst_structure_remove_field (s, "parsed");
-    }
+    remove_fields (peercaps);
 
     res = gst_caps_intersect_full (peercaps, templ, GST_CAPS_INTERSECT_FIRST);
     gst_caps_unref (peercaps);
-    res = gst_caps_make_writable (res);
-
-    /* Append the template caps because we still want to accept
-     * caps without any fields in the case upstream does not
-     * know anything.
-     */
-    gst_caps_append (res, templ);
+    gst_caps_unref (templ);
   } else {
     res = templ;
   }
@@ -392,4 +420,31 @@ gst_h263_parse_get_sink_caps (GstBaseParse * parse, GstCaps * filter)
   }
 
   return res;
+}
+
+static GstFlowReturn
+gst_h263_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
+{
+  GstH263Parse *h263parse = GST_H263_PARSE (parse);
+
+  if (!h263parse->sent_codec_tag) {
+    GstTagList *taglist;
+    GstCaps *caps;
+
+    taglist = gst_tag_list_new_empty ();
+
+    /* codec tag */
+    caps = gst_pad_get_current_caps (GST_BASE_PARSE_SRC_PAD (parse));
+    gst_pb_utils_add_codec_description_to_tag_list (taglist,
+        GST_TAG_VIDEO_CODEC, caps);
+    gst_caps_unref (caps);
+
+    gst_pad_push_event (GST_BASE_PARSE_SRC_PAD (h263parse),
+        gst_event_new_tag (taglist));
+
+    /* also signals the end of first-frame processing */
+    h263parse->sent_codec_tag = TRUE;
+  }
+
+  return GST_FLOW_OK;
 }

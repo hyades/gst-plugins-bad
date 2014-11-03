@@ -59,10 +59,7 @@ struct _GstAmcVideoDec
 
   /* Output format of the codec */
   GstVideoFormat format;
-  gint color_format;
-  gint width, height, stride, slice_height;
-  gint crop_left, crop_right;
-  gint crop_top, crop_bottom;
+  GstAmcColorFormatInfo color_format_info;
 
   guint8 *codec_data;
   gsize codec_data_size;
@@ -78,9 +75,8 @@ struct _GstAmcVideoDec
   GCond drain_cond;
   /* TRUE if EOS buffers shouldn't be forwarded */
   gboolean draining;
-
-  /* TRUE if upstream is EOS */
-  gboolean eos;
+  /* TRUE if the component is drained currently */
+  gboolean drained;
 
   GstFlowReturn downstream_flow_ret;
 };

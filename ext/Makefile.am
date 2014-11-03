@@ -28,18 +28,6 @@ else
 BZ2_DIR=
 endif
 
-if USE_CDAUDIO
-CDAUDIO_DIR=cdaudio
-else
-CDAUDIO_DIR=
-endif
-
-if USE_CELT
-CELT_DIR=celt
-else
-CELT_DIR=
-endif
-
 if USE_CHROMAPRINT
 CHROMAPRINT_DIR=chromaprint
 else
@@ -52,16 +40,16 @@ else
 CURL_DIR=
 endif
 
+if USE_DASH
+DASH_DIR=dash
+else
+DASH_DIR=
+endif
+
 if USE_DC1394
 DC1394_DIR=dc1394
 else
 DC1394_DIR=
-endif
-
-if USE_DIRAC
-DIRAC_DIR=dirac
-else
-DIRAC_DIR=
 endif
 
 if USE_DIRECTFB
@@ -76,16 +64,22 @@ else
 WAYLAND_DIR=
 endif
 
+if USE_DAALA
+DAALA_DIR=daala
+else
+DAALA_DIR=
+endif
+
 if USE_DTS
 DTS_DIR=dts
 else
 DTS_DIR=
 endif
 
-if USE_EGLGLES
-EGLGLES_DIR=eglgles
+if USE_GL
+GL_DIR=gl
 else
-EGLGLES_DIR=
+GL_DIR=
 endif
 
 if USE_RESINDVD
@@ -148,6 +142,12 @@ else
 LV2_DIR =
 endif
 
+if USE_LIBDE265
+LIBDE265_DIR = libde265
+else
+LIBDE265_DIR =
+endif
+
 # if USE_LIBFAME
 # LIBFAME_DIR=libfame
 # else
@@ -156,8 +156,14 @@ LIBFAME_DIR=
 
 if USE_LIBMMS
 LIBMMS_DIR=libmms
-else 
+else
 LIBMMS_DIR=
+endif
+
+if USE_LIBVISUAL
+LIBVISUAL_DIR=libvisual
+else
+LIBVISUAL_DIR=
 endif
 
 if USE_MODPLUG
@@ -196,12 +202,6 @@ else
 MUSEPACK_DIR=
 endif
 
-if USE_MUSICBRAINZ
-MUSICBRAINZ_DIR=musicbrainz
-else
-MUSICBRAINZ_DIR=
-endif
-
 if USE_MYTHTV
 MYTHTV_DIR=mythtv
 else
@@ -238,6 +238,24 @@ SPEAKERTRACK_DIR = speakertrack
 else
 OPENCV_DIR=
 SPEAKERTRACK_DIR =
+endif
+
+if USE_OPENEXR
+OPENEXR_DIR = openexr
+else
+OPENEXR_DIR =
+endif
+
+if USE_OPENH264
+OPENH264_DIR = openh264
+else
+OPENH264_DIR =
+endif
+
+if USE_OPENNI2
+OPENNI2_DIR=openni2
+else
+OPENNI2_DIR=
 endif
 
 if USE_OPENJPEG
@@ -292,6 +310,12 @@ if USE_SDL
 SDL_DIR=sdl
 else
 SDL_DIR=
+endif
+
+if USE_SMOOTHSTREAMING
+SMOOTHSTREAMING_DIR = smoothstreaming
+else
+SMOOTHSTREAMING_DIR =
 endif
 
 # if USE_SMOOTHWAVE
@@ -378,6 +402,17 @@ else
 HLS_DIR =
 endif
 
+if USE_WEBP
+WEBP_DIR=webp
+else
+WEBP_DIR=
+endif
+
+if USE_X265
+X265_DIR=x265
+else
+X265_DIR=
+endif
 
 SUBDIRS=\
 	$(VOAACENC_DIR) \
@@ -386,17 +421,16 @@ SUBDIRS=\
 	$(APEXSINK_DIR) \
 	$(AUDIOFILE_DIR) \
 	$(BZ2_DIR) \
-	$(CDAUDIO_DIR) \
-	$(CELT_DIR) \
 	$(CHROMAPRINT_DIR) \
 	$(CURL_DIR) \
+	$(DASH_DIR) \
 	$(DC1394_DIR) \
-	$(DIRAC_DIR) \
 	$(DIRECTFB_DIR) \
 	$(WAYLAND_DIR) \
+	$(DAALA_DIR) \
 	$(DTS_DIR) \
 	$(RESINDVD_DIR) \
-	$(EGLGLES_DIR) \
+	$(GL_DIR) \
 	$(FAAC_DIR) \
 	$(FAAD_DIR) \
 	$(FLITE_DIR) \
@@ -407,28 +441,33 @@ SUBDIRS=\
 	$(KATE_DIR) \
 	$(LADSPA_DIR) \
 	$(LV2_DIR) \
+	$(LIBDE265_DIR) \
 	$(LIBFAME_DIR) \
 	$(LIBMMS_DIR) \
+	$(LIBVISUAL_DIR) \
 	$(MODPLUG_DIR) \
 	$(MPEG2ENC_DIR) \
 	$(MPG123_DIR) \
 	$(MIMIC_DIR) \
 	$(MPLEX_DIR) \
 	$(MUSEPACK_DIR) \
-	$(MUSICBRAINZ_DIR) \
 	$(MYTHTV_DIR) \
 	$(NAS_DIR) \
 	$(NEON_DIR) \
 	$(OFA_DIR) \
 	$(OPENAL_DIR) \
 	$(OPENCV_DIR) \
+	$(OPENEXR_DIR) \
+	$(OPENH264_DIR) \
 	$(OPENJPEG_DIR) \
+	$(OPENNI2_DIR) \
 	$(OPUS_DIR) \
 	$(RSVG_DIR) \
 	$(SPEAKERTRACK_DIR) \
 	$(SBC_DIR) \
 	$(SCHRO_DIR) \
 	$(SDL_DIR) \
+	$(SMOOTHSTREAMING_DIR) \
 	$(SMOOTHWAVE_DIR) \
 	$(SNDFILE_DIR) \
 	$(SNDIO_DIR) \
@@ -442,18 +481,18 @@ SUBDIRS=\
 	$(XVID_DIR) \
 	$(ZBAR_DIR) \
 	$(RTMP_DIR) \
-	$(HLS_DIR)
+	$(HLS_DIR) \
+	$(WEBP_DIR) \
+	$(X265_DIR)
 
 DIST_SUBDIRS = \
 	assrender \
 	apexsink \
 	bz2 \
-	cdaudio \
-	celt \
 	chromaprint \
 	curl \
+	dash \
 	dc1394 \
-	dirac \
 	directfb \
 	wayland \
 	faac \
@@ -465,23 +504,28 @@ DIST_SUBDIRS = \
 	hls \
 	ladspa \
 	kate \
+	libde265 \
 	libmms \
+	libvisual \
 	lv2 \
+	daala \
 	dts \
-	eglgles \
+	gl \
 	modplug \
 	mimic \
 	mpeg2enc \
 	mpg123 \
 	mplex \
 	musepack \
-	musicbrainz \
 	mythtv \
 	nas \
 	neon \
 	ofa \
 	openal \
 	opencv \
+	openexr \
+	openh264 \
+	openni2 \
 	openjpeg \
 	opus \
 	rsvg \
@@ -490,6 +534,7 @@ DIST_SUBDIRS = \
 	sbc \
 	schroedinger \
 	sdl \
+	smoothstreaming \
 	sndfile \
 	sndio \
 	soundtouch \
@@ -503,6 +548,8 @@ DIST_SUBDIRS = \
 	voamrwbenc \
 	xvid \
 	zbar \
-	rtmp
+	rtmp \
+	webp \
+	x265
 
 include $(top_srcdir)/common/parallel-subdirs.mak

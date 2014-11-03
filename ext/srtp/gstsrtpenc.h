@@ -66,19 +66,6 @@ G_BEGIN_DECLS
 typedef struct _GstSrtpEnc      GstSrtpEnc;
 typedef struct _GstSrtpEncClass GstSrtpEncClass;
 
-typedef enum
-{
-  GST_SRTP_CIPHER_NULL,
-  GST_SRTP_CIPHER_AES_128_ICM
-} GstSrtpCipherType;
-
-typedef enum
-{
-  GST_SRTP_AUTH_NULL,
-  GST_SRTP_AUTH_HMAC_SHA1_32,
-  GST_SRTP_AUTH_HMAC_SHA1_80
-} GstSrtpAuthType;
-
 struct _GstSrtpEnc
 {
   GstElement element;
@@ -95,17 +82,16 @@ struct _GstSrtpEnc
   gboolean first_session;
   gboolean key_changed;
 
-  gboolean hard_limit_reached;
-  gboolean soft_limit_reached;
-
-  GHashTable *ssrcs_set;
-
-  GType key_type;
+  guint replay_window_size;
+  gboolean allow_repeat_tx;
 };
 
 struct _GstSrtpEncClass
 {
   GstElementClass parent_class;
+
+  /* action signals */
+  guint32 (*get_rollover_counter) (GstSrtpEnc *encoder, guint32 ssrc);
 };
 
 GType gst_srtp_enc_get_type (void);

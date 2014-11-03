@@ -1,16 +1,23 @@
 
-Release notes for GStreamer Bad Plugins 1.0.2
+Release notes for GStreamer Bad Plugins 1.4.0
 
 
-The GStreamer team is proud to announce a new release
-in the 1.x stable series of the
-core of the GStreamer streaming media framework.
+The GStreamer team is pleased to announce the first release of
+the stable 1.4 release series. The 1.4 release series is adding new
+features on top of the 1.0 and 1.2 series and is part of the API and
+ABI-stable 1.x release series of the GStreamer multimedia framework.
 
 
-The 1.x series is a stable series targeted at end users.
-It is not API or ABI compatible with the stable 0.10.x series.
-It is, however, parallel installable with the 0.10.x series and
-will not affect an existing 0.10.x installation.
+
+Binaries for Android, iOS, Mac OS X and Windows are provided together
+with this release.
+
+
+
+The stable 1.4 release series is API and ABI compatible with 1.0.x,
+1.2.x and any other 1.x release series in the future. Compared to 1.2.x
+it contains some new features and more intrusive changes that were
+considered too risky as a bugfix.
 
 
 
@@ -60,41 +67,14 @@ contains a set of codecs plugins based on libav (formerly gst-ffmpeg)
 
   
 
-Features of this release
-    
-      * Parallel installability with 0.10.x series
-      * audioparse: add mode where caps are taken from upstream and only timestamping is performed
-      * directsoundsrc: port to 1.0
-      * dtsdec: fix buffer parsing
-      * fieldanalysis: actually build (remove from the NONPORTED plugins list)
-      * hlsdemux: numerous thread-safety fixes, and an invalid memory access fix
-      * mpegdemux: handle and combine downstream flow returns better
-      * mpegdemux: make work properly with dvdreadsrc
-      * mpegtsdemux: PES header parsing fixes; fix potential crash
-      * mpegtsdemux: First push EOS, then destroy all programs
-      * mpegtsmux: fix buffer refcounting issue
-      * mpeg4videoparse: correctly parse the full first frame; properly mark config data presence
-      * mpegvideoparse: correctly parse the full first frame; signal interlacing properly in caps
-      * pitch: fix for start times > 0 (e.g. ogg streaming)
-      * rtmpsink: handle RTMP_Write() return value correctly, fix memory leak
-      * scaletempo: fix timestamp and latency query handling, and event leak
-      * subenc: port to 1.0
-
 Bugs fixed in this release
      
-      * 623387 : mpegdemux: check base_time before calculating new_start
-      * 673414 : directsoundsrc: Port to 1.0
-      * 681459 : rtmpsink: memory leak
-      * 685709 : mpeg4videoparse: AVI file with XVID video doesn't want to preroll: p_length.avi
-      * 685895 : mpegvideoparse: signal interlacing correctly in caps using new " interlace-mode " field
-      * 686009 : rtmpsink: handle RTMP_Write() return value correctly
-      * 686294 : tsdemux: Fix checking P-STD_buffer marker in PES header
-      * 686327 : mpegtsmux: fix refcount issue with input buffers
-      * 686358 : tsdemux: fix potential crash dereferencing NULL program pointer
-      * 686520 : wayland: update to wayland-protocol 0.99
-      * 686547 : rtpopuspay outputs unparseable caps
-      * 686595 : [mpg123] misc improvements and fixes
-      * 686774 : gst-plugins-bad/curl: add a comment describing function...
+      * 726555 : POTFILES.in is out of date
+      * 733052 : Include windsock header for Windows targets
+      * 733063 : examples: gl fxtest example fails to build on win32 with gtk+ 3.0
+      * 733072 : camerabin: Taking a picture in cheese leads to all sort of race
+      * 733123 : mxfmux: Avoid taking unnecessary ref
+      * 733248 : gl: GLintptr/GLsizeiptr/etc typechecks ignore GL_CFLAGS, potentially causing typedef redefinition errors from gst-libs/gst/gl/glprototypes/gstgl_compat.h at buildtime
 
 ==== Download ====
 
@@ -131,20 +111,28 @@ subscribe to the gstreamer-devel list.
         
 Contributors to this release
     
-      * Andoni Morales Alastruey
-      * Carlos Rafael Giani
-      * David Régade
+      * Alessandro Decina
+      * Alexey Pavlov
+      * Arun Raghavan
+      * Edward Hervey
+      * Gwenole Beauchesne
+      * Göran Jönsson
+      * Jan Alexander Steffens (heftig)
       * Jan Schmidt
-      * Josep Torra
-      * Mark Nauwelaerts
-      * Michael Smith
-      * Raimo Järvi
-      * Reynaldo H. Verdejo Pinochet
+      * Julien Isorce
+      * Mart Raudsepp
+      * Mathieu Duponchelle
+      * Matthew Waters
+      * Matthieu Bouron
+      * Nicolas Dufresne
+      * Philip Withnall
+      * Piotr Drąg
       * Sebastian Dröge
       * Sebastian Rasmussen
-      * Sergey N. Gorshkov
-      * Sreerenj Balachandran
-      * Thijs Vermeir
+      * Stefan Ringel
+      * Thiago Santos
+      * Thibault Saunier
       * Tim-Philipp Müller
-      * Wim Taymans
+      * Vincent Penquerc'h
+      * Wang Xin-yu (王昕宇)
  

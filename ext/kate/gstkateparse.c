@@ -362,7 +362,7 @@ gst_kate_parse_parse_packet (GstKateParse * parse, GstBuffer * buf)
 
   size = gst_buffer_extract (buf, 0, header, 1);
 
-  GST_LOG_OBJECT (parse, "Got packet %02x, %zu bytes",
+  GST_LOG_OBJECT (parse, "Got packet %02x, %" G_GSIZE_FORMAT " bytes",
       size ? header[0] : -1, gst_buffer_get_size (buf));
 
   if (size > 0 && header[0] & 0x80) {
@@ -421,7 +421,7 @@ gst_kate_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   parse = GST_KATE_PARSE (parent);
 
   switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_FLUSH_START:
+    case GST_EVENT_FLUSH_STOP:
       gst_kate_parse_clear_queue (parse);
       ret = gst_pad_event_default (pad, parent, event);
       break;
@@ -436,7 +436,8 @@ gst_kate_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       ret = gst_pad_event_default (pad, parent, event);
       break;
     default:
-      if (!parse->streamheader_sent && GST_EVENT_IS_SERIALIZED (event))
+      if (!parse->streamheader_sent && GST_EVENT_IS_SERIALIZED (event)
+          && GST_EVENT_TYPE (event) > GST_EVENT_CAPS)
         ret = gst_kate_parse_queue_event (parse, event);
       else
         ret = gst_pad_event_default (pad, parent, event);

@@ -48,10 +48,27 @@ typedef struct _MpegTSParse2Class MpegTSParse2Class;
 struct _MpegTSParse2 {
   MpegTSBase parent;
 
+  gboolean have_group_id;
+  guint group_id;
+
+  GstClockTime smoothing_latency;
+  GstClockTime current_pcr;
+  gint user_pcr_pid;
+  gint pcr_pid;
+
   /* Always present source pad */
   GstPad *srcpad;
 
   GList *srcpads;
+
+  /* state */
+  gboolean first;
+  gboolean set_timestamps;
+
+  /* Pending buffer state */
+  GList *pending_buffers;
+  GstClockTime previous_pcr;
+  guint bytes_since_pcr;
 };
 
 struct _MpegTSParse2Class {

@@ -21,6 +21,7 @@
 #define _GST_INTER_AUDIO_SRC_H_
 
 #include <gst/base/gstbasesrc.h>
+#include <gst/audio/audio.h>
 #include "gstintersurface.h"
 
 G_BEGIN_DECLS
@@ -42,7 +43,8 @@ struct _GstInterAudioSrc
   char *channel;
 
   guint64 n_samples;
-  int sample_rate;
+  GstClockTime timestamp_offset;
+  GstAudioInfo info;
 };
 
 struct _GstInterAudioSrcClass

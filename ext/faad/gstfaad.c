@@ -360,21 +360,18 @@ gst_faad_set_format (GstAudioDecoder * dec, GstCaps * caps)
 wrong_length:
   {
     GST_DEBUG_OBJECT (faad, "codec_data less than 2 bytes long");
-    gst_object_unref (faad);
     gst_buffer_unmap (buf, &map);
     return FALSE;
   }
 open_failed:
   {
     GST_DEBUG_OBJECT (faad, "failed to create decoder");
-    gst_object_unref (faad);
     gst_buffer_unmap (buf, &map);
     return FALSE;
   }
 init_failed:
   {
     GST_DEBUG_OBJECT (faad, "faacDecInit2() failed");
-    gst_object_unref (faad);
     gst_buffer_unmap (buf, &map);
     return FALSE;
   }
@@ -459,7 +456,6 @@ gst_faad_chanpos_to_gst (GstFaad * faad, guchar * fpos,
         GST_WARNING_OBJECT (faad,
             "Unsupported FAAD channel position 0x%x encountered", fpos[n]);
         return FALSE;
-        break;
       }
     }
   }
@@ -893,7 +889,8 @@ gst_faad_close_decoder (GstFaad * faad)
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  return gst_element_register (plugin, "faad", GST_RANK_PRIMARY, GST_TYPE_FAAD);
+  return gst_element_register (plugin, "faad", GST_RANK_SECONDARY,
+      GST_TYPE_FAAD);
 }
 
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,

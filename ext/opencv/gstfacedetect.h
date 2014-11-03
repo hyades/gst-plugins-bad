@@ -4,6 +4,7 @@
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2008 Michael Sheldon <mike@mikeasoft.com>
  * Copyright (C) 2011 Stefan Sauer <ensonic@users.sf.net>
+ * Copyright (C) 2011 Robert Jobbagy <jobbagy.robert@gmail.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -70,11 +71,28 @@ G_BEGIN_DECLS
 typedef struct _GstFaceDetect GstFaceDetect;
 typedef struct _GstFaceDetectClass GstFaceDetectClass;
 
+/**
+ * GstFaceDetectUpdates
+ * @GST_FACEDETECT_UPDATES_EVERY_FRAME: Send bus update messages for every frame
+ * @GST_FACEDETECT_UPDATES_ON_CHANGE: Send bus update messages on change (face detected/not detected)
+ * @GST_FACEDETECT_UPDATES_ON_FACE: Send bus update messages when a face is detected
+ * @GST_FACEDETECT_UPDATES_NONE: No bus update messages
+ *
+ * Bus messages update scheme
+ */
+enum _GstFaceDetectUpdates {
+  GST_FACEDETECT_UPDATES_EVERY_FRAME      = 0,
+  GST_FACEDETECT_UPDATES_ON_CHANGE        = 1,
+  GST_FACEDETECT_UPDATES_ON_FACE          = 2,
+  GST_FACEDETECT_UPDATES_NONE             = 3
+};
+
 struct _GstFaceDetect
 {
   GstOpencvVideoFilter element;
 
   gboolean display;
+  gboolean face_detected;
 
   gchar *face_profile;
   gchar *nose_profile;
@@ -85,6 +103,8 @@ struct _GstFaceDetect
   gint flags;
   gint min_size_width;
   gint min_size_height;
+  gint min_stddev;
+  gint updates;
 
   IplImage *cvGray;
   CvHaarClassifierCascade *cvFaceDetect;

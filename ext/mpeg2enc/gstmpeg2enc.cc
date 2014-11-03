@@ -71,8 +71,7 @@ GST_DEBUG_CATEGORY (mpeg2enc_debug);
 static GstStaticPadTemplate sink_template = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("video/x-raw, "
-        "format = (string) { I420 }, " COMMON_VIDEO_CAPS)
+    GST_STATIC_CAPS ("video/x-raw, format = (string) I420, " COMMON_VIDEO_CAPS)
     );
 
 static GstStaticPadTemplate src_template = GST_STATIC_PAD_TEMPLATE ("src",
@@ -363,6 +362,7 @@ gst_mpeg2enc_sink_query (GstPad * pad, GstObject * parent,
       gst_caps_unref (caps);
       res = TRUE;
     }
+      break;
     default:
       res = gst_pad_query_default (pad, parent, query);
       break;
@@ -380,8 +380,6 @@ gst_mpeg2enc_setcaps (GstMpeg2enc * enc, GstPad * pad, GstCaps * caps)
   /* does not go well to restart stream mid-way */
   if (enc->encoder)
     goto refuse_renegotiation;
-
-  pad = enc->sinkpad;
 
   /* since mpeg encoder does not really check, let's check caps */
   if (!gst_video_info_from_caps (&enc->vinfo, caps))
@@ -450,7 +448,6 @@ gst_mpeg2enc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* no special action as there is not much to flush;
        * neither is it possible to halt the mpeg encoding loop */
       goto done;
-      break;
     case GST_EVENT_FLUSH_STOP:
       /* forward event */
       result = gst_pad_push_event (enc->srcpad, event);
@@ -463,7 +460,6 @@ gst_mpeg2enc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       enc->srcresult = GST_FLOW_OK;
       GST_MPEG2ENC_MUTEX_UNLOCK (enc);
       goto done;
-      break;
     case GST_EVENT_EOS:
       /* inform the encoding task that it can stop now */
       GST_MPEG2ENC_MUTEX_LOCK (enc);
@@ -474,7 +470,6 @@ gst_mpeg2enc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* eat this event for now, task will send eos when finished */
       gst_event_unref (event);
       goto done;
-      break;
     case GST_EVENT_CAPS:
     {
       GstCaps *caps;
@@ -483,7 +478,6 @@ gst_mpeg2enc_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       result = gst_mpeg2enc_setcaps (enc, pad, caps);
       gst_event_unref (event);
       goto done;
-      break;
     }
     default:
       /* for a serialized event, wait until an earlier buffer is gone,

@@ -81,7 +81,7 @@ enum
   PROP_MODE,
   PROP_CONNECTION,
   PROP_AUDIO_INPUT,
-  PROP_DEVICE
+  PROP_DEVICE_NUMBER
 };
 
 static GstStaticPadTemplate gst_decklink_src_audio_src_template =
@@ -132,14 +132,11 @@ gst_decklink_src_class_init (GstDecklinkSrcClass * klass)
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
               G_PARAM_CONSTRUCT)));
 
-  /* FIXME: should be device-number or so, or turned into a string */
-#if 0
-  g_object_class_install_property (gobject_class, PROP_DEVICE,
-      g_param_spec_int ("device", "Device", "Capture device instance to use",
-          0, G_MAXINT, 0,
+  g_object_class_install_property (gobject_class, PROP_DEVICE_NUMBER,
+      g_param_spec_int ("device-number", "Device number",
+          "Capture device instance to use", 0, G_MAXINT, 0,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
               G_PARAM_CONSTRUCT)));
-#endif
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_decklink_src_audio_src_template));
@@ -179,6 +176,7 @@ gst_decklink_src_init (GstDecklinkSrc * decklinksrc)
       GST_DEBUG_FUNCPTR (gst_decklink_src_video_src_query));
   gst_element_add_pad (GST_ELEMENT (decklinksrc), decklinksrc->videosrcpad);
 
+  GST_OBJECT_FLAG_SET (decklinksrc, GST_ELEMENT_FLAG_SOURCE);
 
   g_cond_init (&decklinksrc->cond);
   g_mutex_init (&decklinksrc->mutex);
@@ -188,7 +186,7 @@ gst_decklink_src_init (GstDecklinkSrc * decklinksrc)
   decklinksrc->mode = GST_DECKLINK_MODE_NTSC;
   decklinksrc->connection = GST_DECKLINK_CONNECTION_SDI;
   decklinksrc->audio_connection = GST_DECKLINK_AUDIO_CONNECTION_AUTO;
-  decklinksrc->device = 0;
+  decklinksrc->device_number = 0;
 
   decklinksrc->stop = FALSE;
   decklinksrc->dropped_frames = 0;
@@ -237,8 +235,8 @@ gst_decklink_src_set_property (GObject * object, guint property_id,
       decklinksrc->audio_connection =
           (GstDecklinkAudioConnectionEnum) g_value_get_enum (value);
       break;
-    case PROP_DEVICE:
-      decklinksrc->device = g_value_get_int (value);
+    case PROP_DEVICE_NUMBER:
+      decklinksrc->device_number = g_value_get_int (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -264,8 +262,8 @@ gst_decklink_src_get_property (GObject * object, guint property_id,
     case PROP_AUDIO_INPUT:
       g_value_set_enum (value, decklinksrc->audio_connection);
       break;
-    case PROP_DEVICE:
-      g_value_set_int (value, decklinksrc->device);
+    case PROP_DEVICE_NUMBER:
+      g_value_set_int (value, decklinksrc->device_number);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -364,6 +362,7 @@ gst_decklink_src_send_event (GstElement * element, GstEvent * event)
     case GST_EVENT_EOS:
       g_atomic_int_set (&src->pending_eos, TRUE);
       GST_INFO_OBJECT (src, "EOS pending");
+      g_cond_signal (&src->cond);
       result = TRUE;
       break;
       break;
@@ -419,12 +418,16 @@ gst_decklink_src_start (GstElement * element)
 
   GST_DEBUG_OBJECT (decklinksrc, "start");
 
-  decklinksrc->decklink = gst_decklink_get_nth_device (decklinksrc->device);
+  decklinksrc->decklink = gst_decklink_get_nth_device (decklinksrc->device_number);
   if (decklinksrc->decklink == NULL) {
     return FALSE;
   }
 
-  decklinksrc->input = gst_decklink_get_nth_input (decklinksrc->device);
+  decklinksrc->input = gst_decklink_get_nth_input (decklinksrc->device_number);
+  if (decklinksrc->input == NULL) {
+    GST_ERROR ("no input source for device %i", decklinksrc->device_number);
+    return FALSE;
+  }
 
   delegate = new DeckLinkCaptureDelegate ();
   delegate->priv = decklinksrc;
@@ -434,8 +437,12 @@ gst_decklink_src_start (GstElement * element)
     return FALSE;
   }
 
-  decklinksrc->config = gst_decklink_get_nth_config (decklinksrc->device);
+  decklinksrc->config = gst_decklink_get_nth_config (decklinksrc->device_number);
   config = decklinksrc->config;
+  if (decklinksrc->config == NULL) {
+    GST_ERROR ("no config for device %i", decklinksrc->device_number);
+    return FALSE;
+  }
 
   switch (decklinksrc->connection) {
     default:
@@ -691,6 +698,7 @@ gst_decklink_src_send_initial_events (GstDecklinkSrc * src)
 {
   GstSegment segment;
   GstEvent *event;
+  guint group_id;
   guint32 audio_id, video_id;
   gchar stream_id[9];
 
@@ -700,17 +708,16 @@ gst_decklink_src_send_initial_events (GstDecklinkSrc * src)
   while (video_id == audio_id)
     video_id = g_random_int ();
 
+  group_id = gst_util_group_id_next ();
   g_snprintf (stream_id, sizeof (stream_id), "%08x", audio_id);
-  gst_pad_push_event (src->audiosrcpad, gst_event_new_stream_start (stream_id));
+  event = gst_event_new_stream_start (stream_id);
+  gst_event_set_group_id (event, group_id);
+  gst_pad_push_event (src->audiosrcpad, event);
 
   g_snprintf (stream_id, sizeof (stream_id), "%08x", video_id);
-  gst_pad_push_event (src->videosrcpad, gst_event_new_stream_start (stream_id));
-
-  /* segment */
-  gst_segment_init (&segment, GST_FORMAT_TIME);
-  event = gst_event_new_segment (&segment);
-  gst_pad_push_event (src->videosrcpad, gst_event_ref (event));
-  gst_pad_push_event (src->audiosrcpad, event);
+  event = gst_event_new_stream_start (stream_id);
+  gst_event_set_group_id (event, group_id);
+  gst_pad_push_event (src->videosrcpad, event);
 
   /* caps */
   gst_pad_push_event (src->audiosrcpad,
@@ -721,6 +728,12 @@ gst_decklink_src_send_initial_events (GstDecklinkSrc * src)
 
   gst_pad_push_event (src->videosrcpad,
       gst_event_new_caps (gst_decklink_mode_get_caps (src->mode)));
+
+  /* segment */
+  gst_segment_init (&segment, GST_FORMAT_TIME);
+  event = gst_event_new_segment (&segment);
+  gst_pad_push_event (src->videosrcpad, gst_event_ref (event));
+  gst_pad_push_event (src->audiosrcpad, event);
 }
 
 static void
@@ -741,7 +754,8 @@ gst_decklink_src_task (void *priv)
   GST_DEBUG_OBJECT (decklinksrc, "task");
 
   g_mutex_lock (&decklinksrc->mutex);
-  while (decklinksrc->video_frame == NULL && !decklinksrc->stop) {
+  while (decklinksrc->video_frame == NULL && !decklinksrc->stop &&
+      !decklinksrc->pending_eos) {
     g_cond_wait (&decklinksrc->cond, &decklinksrc->mutex);
   }
   video_frame = decklinksrc->video_frame;
@@ -757,6 +771,13 @@ gst_decklink_src_task (void *priv)
       audio_frame->Release ();
     GST_DEBUG ("stopping task");
     return;
+  }
+
+  if (g_atomic_int_compare_and_exchange (&decklinksrc->pending_eos, TRUE,
+      FALSE)) {
+    GST_INFO_OBJECT (decklinksrc, "EOS pending");
+    flow = GST_FLOW_EOS;
+    goto pause;
   }
 
   /* warning on dropped frames */
@@ -882,12 +903,6 @@ gst_decklink_src_task (void *priv)
     flow = GST_FLOW_EOS;
   else
     flow = video_flow;
-
-  if (g_atomic_int_compare_and_exchange (&decklinksrc->pending_eos, TRUE,
-      FALSE)) {
-    GST_INFO_OBJECT (decklinksrc, "EOS pending");
-    flow = GST_FLOW_EOS;
-  }
 
   if (flow != GST_FLOW_OK)
     goto pause;

@@ -3,6 +3,7 @@
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2008 Michael Sheldon <mike@mikeasoft.com>
+ * Copyright (C) 2011 Robert Jobbagy <jobbagy.robert@gmail.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -51,7 +52,7 @@
  * <refsect2>
  * <title>Example launch line</title>
  * |[
- * gst-launch-0.10 videotestsrc ! decodebin ! videoconvert ! faceblur ! videoconvert ! xvimagesink
+ * gst-launch-1.0 autovideosrc ! videoconvert ! faceblur ! videoconvert ! autovideosink
  * ]|
  * </refsect2>
  */
@@ -68,21 +69,60 @@
 GST_DEBUG_CATEGORY_STATIC (gst_face_blur_debug);
 #define GST_CAT_DEFAULT gst_face_blur_debug
 
-#define HAAR_CASCADES_DIR OPENCV_PREFIX "/share/opencv/haarcascades/"
-#define DEFAULT_PROFILE HAAR_CASCADES_DIR "haarcascade_frontalface_default.xml"
-
-/* Filter signals and args */
-enum
-{
-  /* FILL ME */
-  LAST_SIGNAL
-};
+#define DEFAULT_PROFILE OPENCV_PREFIX G_DIR_SEPARATOR_S "share" \
+    G_DIR_SEPARATOR_S "opencv" G_DIR_SEPARATOR_S "haarcascades" \
+    G_DIR_SEPARATOR_S "haarcascade_frontalface_default.xml"
+#define DEFAULT_SCALE_FACTOR 1.25
+#define DEFAULT_FLAGS CV_HAAR_DO_CANNY_PRUNING
+#define DEFAULT_MIN_NEIGHBORS 3
+#define DEFAULT_MIN_SIZE_WIDTH 30
+#define DEFAULT_MIN_SIZE_HEIGHT 30
 
 enum
 {
   PROP_0,
-  PROP_PROFILE
+  PROP_PROFILE,
+  PROP_SCALE_FACTOR,
+  PROP_MIN_NEIGHBORS,
+  PROP_FLAGS,
+  PROP_MIN_SIZE_WIDTH,
+  PROP_MIN_SIZE_HEIGHT
 };
+
+/**
+ * GstOpencvFaceDetectFlags:
+ * @GST_CAMERABIN_FLAG_SOURCE_RESIZE: enable video crop and scale
+ *   after capture
+ *
+ * Flags parameter to OpenCV's cvHaarDetectObjects function.
+ */
+typedef enum
+{
+  GST_OPENCV_FACE_BLUR_HAAR_DO_CANNY_PRUNING = (1 << 0)
+} GstOpencvFaceBlurFlags;
+
+#define GST_TYPE_OPENCV_FACE_BLUR_FLAGS (gst_opencv_face_blur_flags_get_type())
+
+static void
+register_gst_opencv_face_blur_flags (GType * id)
+{
+  static const GFlagsValue values[] = {
+    {(guint) GST_OPENCV_FACE_BLUR_HAAR_DO_CANNY_PRUNING,
+        "Do Canny edge detection to discard some regions", "do-canny-pruning"},
+    {0, NULL, NULL}
+  };
+  *id = g_flags_register_static ("GstOpencvFaceBlurFlags", values);
+}
+
+static GType
+gst_opencv_face_blur_flags_get_type (void)
+{
+  static GType id;
+  static GOnce once = G_ONCE_INIT;
+
+  g_once (&once, (GThreadFunc) register_gst_opencv_face_blur_flags, &id);
+  return id;
+}
 
 /* the capabilities of the inputs and outputs.
  */
@@ -98,17 +138,19 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("RGB"))
     );
 
-G_DEFINE_TYPE (GstFaceBlur, gst_face_blur, GST_TYPE_ELEMENT);
+G_DEFINE_TYPE (GstFaceBlur, gst_face_blur, GST_TYPE_OPENCV_VIDEO_FILTER);
 
 static void gst_face_blur_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_face_blur_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
 
-static gboolean gst_face_blur_handle_sink_event (GstPad * pad,
-    GstObject * parent, GstEvent * event);
-static GstFlowReturn gst_face_blur_chain (GstPad * pad, GstObject * parent,
-    GstBuffer * buf);
+
+static gboolean gst_face_blur_set_caps (GstOpencvVideoFilter * transform,
+    gint in_width, gint in_height, gint in_depth, gint in_channels,
+    gint out_width, gint out_height, gint out_depth, gint out_channels);
+static GstFlowReturn gst_face_blur_transform_ip (GstOpencvVideoFilter *
+    transform, GstBuffer * buffer, IplImage * img);
 
 static void gst_face_blur_load_profile (GstFaceBlur * filter);
 
@@ -118,10 +160,14 @@ gst_face_blur_finalize (GObject * obj)
 {
   GstFaceBlur *filter = GST_FACE_BLUR (obj);
 
-  if (filter->cvImage) {
-    cvReleaseImage (&filter->cvImage);
+  if (filter->cvGray)
     cvReleaseImage (&filter->cvGray);
-  }
+
+  if (filter->cvStorage)
+    cvReleaseMemStorage (&filter->cvStorage);
+
+  if (filter->cvCascade)
+    cvReleaseHaarClassifierCascade (&filter->cvCascade);
 
   g_free (filter->profile);
 
@@ -134,9 +180,14 @@ static void
 gst_face_blur_class_init (GstFaceBlurClass * klass)
 {
   GObjectClass *gobject_class;
+  GstOpencvVideoFilterClass *gstopencvbasefilter_class;
 
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
   gobject_class = (GObjectClass *) klass;
+  gstopencvbasefilter_class = (GstOpencvVideoFilterClass *) klass;
+
+  gstopencvbasefilter_class->cv_trans_ip_func = gst_face_blur_transform_ip;
+  gstopencvbasefilter_class->cv_set_caps = gst_face_blur_set_caps;
 
   gobject_class->finalize = GST_DEBUG_FUNCPTR (gst_face_blur_finalize);
   gobject_class->set_property = gst_face_blur_set_property;
@@ -146,12 +197,34 @@ gst_face_blur_class_init (GstFaceBlurClass * klass)
       g_param_spec_string ("profile", "Profile",
           "Location of Haar cascade file to use for face blurion",
           DEFAULT_PROFILE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_FLAGS,
+      g_param_spec_flags ("flags", "Flags", "Flags to cvHaarDetectObjects",
+          GST_TYPE_OPENCV_FACE_BLUR_FLAGS, DEFAULT_FLAGS,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_SCALE_FACTOR,
+      g_param_spec_double ("scale-factor", "Scale factor",
+          "Factor by which the windows is scaled after each scan",
+          1.1, 10.0, DEFAULT_SCALE_FACTOR,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_MIN_NEIGHBORS,
+      g_param_spec_int ("min-neighbors", "Mininum neighbors",
+          "Minimum number (minus 1) of neighbor rectangles that makes up "
+          "an object", 0, G_MAXINT, DEFAULT_MIN_NEIGHBORS,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_MIN_SIZE_WIDTH,
+      g_param_spec_int ("min-size-width", "Minimum size width",
+          "Minimum window width size", 0, G_MAXINT, DEFAULT_MIN_SIZE_WIDTH,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_MIN_SIZE_HEIGHT,
+      g_param_spec_int ("min-size-height", "Minimum size height",
+          "Minimum window height size", 0, G_MAXINT, DEFAULT_MIN_SIZE_HEIGHT,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_set_static_metadata (element_class,
       "faceblur",
       "Filter/Effect/Video",
       "Blurs faces in images and videos",
-      "Michael Sheldon <mike@mikeasoft.com>");
+      "Michael Sheldon <mike@mikeasoft.com>,Robert Jobbagy <jobbagy.robert@gmail.com>");
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&src_factory));
@@ -167,20 +240,17 @@ gst_face_blur_class_init (GstFaceBlurClass * klass)
 static void
 gst_face_blur_init (GstFaceBlur * filter)
 {
-  filter->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
-  GST_PAD_SET_PROXY_CAPS (filter->sinkpad);
-  gst_pad_set_event_function (filter->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_face_blur_handle_sink_event));
-  gst_pad_set_chain_function (filter->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_face_blur_chain));
-
-  filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
-  GST_PAD_SET_PROXY_CAPS (filter->srcpad);
-
-  gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
-  gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
   filter->profile = g_strdup (DEFAULT_PROFILE);
   gst_face_blur_load_profile (filter);
+  filter->sent_profile_load_failed_msg = FALSE;
+  filter->scale_factor = DEFAULT_SCALE_FACTOR;
+  filter->min_neighbors = DEFAULT_MIN_NEIGHBORS;
+  filter->flags = DEFAULT_FLAGS;
+  filter->min_size_width = DEFAULT_MIN_SIZE_WIDTH;
+  filter->min_size_height = DEFAULT_MIN_SIZE_HEIGHT;
+
+  gst_opencv_video_filter_set_in_place (GST_OPENCV_VIDEO_FILTER_CAST (filter),
+      TRUE);
 }
 
 static void
@@ -194,6 +264,22 @@ gst_face_blur_set_property (GObject * object, guint prop_id,
       g_free (filter->profile);
       filter->profile = g_value_dup_string (value);
       gst_face_blur_load_profile (filter);
+      filter->sent_profile_load_failed_msg = FALSE;
+      break;
+    case PROP_SCALE_FACTOR:
+      filter->scale_factor = g_value_get_double (value);
+      break;
+    case PROP_MIN_NEIGHBORS:
+      filter->min_neighbors = g_value_get_int (value);
+      break;
+    case PROP_MIN_SIZE_WIDTH:
+      filter->min_size_width = g_value_get_int (value);
+      break;
+    case PROP_MIN_SIZE_HEIGHT:
+      filter->min_size_height = g_value_get_int (value);
+      break;
+    case PROP_FLAGS:
+      filter->flags = g_value_get_flags (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -211,105 +297,100 @@ gst_face_blur_get_property (GObject * object, guint prop_id,
     case PROP_PROFILE:
       g_value_set_string (value, filter->profile);
       break;
+    case PROP_SCALE_FACTOR:
+      g_value_set_double (value, filter->scale_factor);
+      break;
+    case PROP_MIN_NEIGHBORS:
+      g_value_set_int (value, filter->min_neighbors);
+      break;
+    case PROP_MIN_SIZE_WIDTH:
+      g_value_set_int (value, filter->min_size_width);
+      break;
+    case PROP_MIN_SIZE_HEIGHT:
+      g_value_set_int (value, filter->min_size_height);
+      break;
+    case PROP_FLAGS:
+      g_value_set_flags (value, filter->flags);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
   }
 }
 
-/* GstElement vmethod implementations */
-
-/* this function handles the link with other elements */
 static gboolean
-gst_face_blur_handle_sink_event (GstPad * pad, GstObject * parent,
-    GstEvent * event)
+gst_face_blur_set_caps (GstOpencvVideoFilter * transform,
+    gint in_width, gint in_height, gint in_depth, gint in_channels,
+    gint out_width, gint out_height, gint out_depth, gint out_channels)
 {
-  GstFaceBlur *filter;
-  gint width, height;
-  GstStructure *structure;
-  gboolean res = TRUE;
+  GstFaceBlur *filter = GST_FACE_BLUR (transform);
 
-  filter = GST_FACE_BLUR (parent);
+  if (filter->cvGray)
+    cvReleaseImage (&filter->cvGray);
+  filter->cvGray =
+      cvCreateImage (cvSize (in_width, in_height), IPL_DEPTH_8U, 1);
 
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CAPS:
-    {
-      GstCaps *caps;
-      gst_event_parse_caps (event, &caps);
+  if (filter->cvStorage)
+    cvClearMemStorage (filter->cvStorage);
+  else
+    filter->cvStorage = cvCreateMemStorage (0);
 
-      structure = gst_caps_get_structure (caps, 0);
-      gst_structure_get_int (structure, "width", &width);
-      gst_structure_get_int (structure, "height", &height);
-
-      filter->cvImage = cvCreateImage (cvSize (width, height), IPL_DEPTH_8U, 3);
-      filter->cvGray = cvCreateImage (cvSize (width, height), IPL_DEPTH_8U, 1);
-      filter->cvStorage = cvCreateMemStorage (0);
-      break;
-    }
-    default:
-      break;
-  }
-
-  res = gst_pad_event_default (pad, parent, event);
-
-  return res;
+  return TRUE;
 }
 
-/* chain function
- * this function does the actual processing
- */
 static GstFlowReturn
-gst_face_blur_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
+gst_face_blur_transform_ip (GstOpencvVideoFilter * transform,
+    GstBuffer * buffer, IplImage * img)
 {
-  GstFaceBlur *filter;
+  GstFaceBlur *filter = GST_FACE_BLUR (transform);
   CvSeq *faces;
-  GstMapInfo info;
   int i;
 
-  filter = GST_FACE_BLUR (GST_OBJECT_PARENT (pad));
-
-  buf = gst_buffer_make_writable (buf);
-  gst_buffer_map (buf, &info, GST_MAP_READWRITE);
-  filter->cvImage->imageData = (char *) info.data;
-
-  cvCvtColor (filter->cvImage, filter->cvGray, CV_RGB2GRAY);
-  cvClearMemStorage (filter->cvStorage);
-
-  if (filter->cvCascade) {
-    faces =
-        cvHaarDetectObjects (filter->cvGray, filter->cvCascade,
-        filter->cvStorage, 1.1, 2, 0, cvSize (30, 30)
-#if (CV_MAJOR_VERSION >= 2) && (CV_MINOR_VERSION >= 2)
-        , cvSize (32, 32)
-#endif
-        );
-
-    if (faces && faces->total > 0) {
-      buf = gst_buffer_make_writable (buf);
+  if (!filter->cvCascade) {
+    if (filter->profile != NULL
+        && filter->sent_profile_load_failed_msg == FALSE) {
+      GST_ELEMENT_WARNING (filter, RESOURCE, NOT_FOUND,
+          ("Profile %s is missing.", filter->profile),
+          ("missing faceblur profile file %s", filter->profile));
+      filter->sent_profile_load_failed_msg = TRUE;
     }
-    for (i = 0; i < (faces ? faces->total : 0); i++) {
-      CvRect *r = (CvRect *) cvGetSeqElem (faces, i);
-      cvSetImageROI (filter->cvImage, *r);
-      cvSmooth (filter->cvImage, filter->cvImage, CV_BLUR, 11, 11, 0, 0);
-      cvSmooth (filter->cvImage, filter->cvImage, CV_GAUSSIAN, 11, 11, 0, 0);
-      cvResetImageROI (filter->cvImage);
-    }
+
+    return GST_FLOW_OK;
   }
 
-  /* these filters operate in place, so we push the same buffer */
+  cvCvtColor (img, filter->cvGray, CV_RGB2GRAY);
+  cvClearMemStorage (filter->cvStorage);
 
-  return gst_pad_push (filter->srcpad, buf);
+  faces =
+      cvHaarDetectObjects (filter->cvGray, filter->cvCascade,
+      filter->cvStorage, filter->scale_factor, filter->min_neighbors,
+      filter->flags, cvSize (filter->min_size_width, filter->min_size_height)
+#if (CV_MAJOR_VERSION >= 2) && (CV_MINOR_VERSION >= 2)
+      , cvSize (filter->min_size_width + 2, filter->min_size_height + 2)
+#endif
+      );
+
+  for (i = 0; i < (faces ? faces->total : 0); i++) {
+    CvRect *r = (CvRect *) cvGetSeqElem (faces, i);
+    cvSetImageROI (img, *r);
+    cvSmooth (img, img, CV_BLUR, 11, 11, 0, 0);
+    cvSmooth (img, img, CV_GAUSSIAN, 11, 11, 0, 0);
+    cvResetImageROI (img);
+  }
+
+  return GST_FLOW_OK;
 }
 
 
 static void
 gst_face_blur_load_profile (GstFaceBlur * filter)
 {
+  if (filter->cvCascade)
+    cvReleaseHaarClassifierCascade (&filter->cvCascade);
   filter->cvCascade =
       (CvHaarClassifierCascade *) cvLoad (filter->profile, 0, 0, 0);
-  if (!filter->cvCascade) {
+  if (!filter->cvCascade)
     GST_WARNING ("Couldn't load Haar classifier cascade: %s.", filter->profile);
-  }
 }
 
 

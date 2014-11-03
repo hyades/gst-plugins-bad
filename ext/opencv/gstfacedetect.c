@@ -4,6 +4,7 @@
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2008 Michael Sheldon <mike@mikeasoft.com>
  * Copyright (C) 2011 Stefan Sauer <ensonic@users.sf.net>
+ * Copyright (C) 2014 Robert Jobbagy <jobbagy.robert@gmail.com>
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -48,6 +49,7 @@
  * SECTION:element-facedetect
  *
  * Performs face detection on videos and images.
+ * If you have high cpu load you need to use videoscale with capsfilter and reduce the video resolution.
  *
  * The image is scaled down multiple times using the GstFaceDetect::scale-factor
  * until the size is &lt;= GstFaceDetect::min-size-width or 
@@ -56,10 +58,10 @@
  * <refsect2>
  * <title>Example launch line</title>
  * |[
- * gst-launch-0.10 autovideosrc ! decodebin2 ! colorspace ! facedetect ! videoconvert ! xvimagesink
+ * gst-launch-1.0 autovideosrc ! decodebin2 ! colorspace ! facedetect ! videoconvert ! xvimagesink
  * ]| Detect and show faces
  * |[
- * gst-launch-0.10 autovideosrc ! video/x-raw,width=320,height=240 ! videoconvert ! facedetect min-size-width=60 min-size-height=60 ! colorspace ! xvimagesink
+ * gst-launch-1.0 autovideosrc ! video/x-raw,width=320,height=240 ! videoconvert ! facedetect min-size-width=60 min-size-height=60 ! colorspace ! xvimagesink
  * ]| Detect large faces on a smaller image 
  *
  * </refsect2>
@@ -75,6 +77,7 @@
 #endif
 
 #include <gst/gst.h>
+#include <gst/video/gstvideometa.h>
 
 #include "gstopencvutils.h"
 #include "gstfacedetect.h"
@@ -82,16 +85,19 @@
 GST_DEBUG_CATEGORY_STATIC (gst_face_detect_debug);
 #define GST_CAT_DEFAULT gst_face_detect_debug
 
-#define HAAR_CASCADES_DIR OPENCV_PREFIX "/share/opencv/haarcascades/"
+#define HAAR_CASCADES_DIR OPENCV_PREFIX G_DIR_SEPARATOR_S "share" \
+    G_DIR_SEPARATOR_S "opencv" G_DIR_SEPARATOR_S "haarcascades" \
+    G_DIR_SEPARATOR_S
 #define DEFAULT_FACE_PROFILE HAAR_CASCADES_DIR "haarcascade_frontalface_default.xml"
 #define DEFAULT_NOSE_PROFILE HAAR_CASCADES_DIR "haarcascade_mcs_nose.xml"
 #define DEFAULT_MOUTH_PROFILE HAAR_CASCADES_DIR "haarcascade_mcs_mouth.xml"
 #define DEFAULT_EYES_PROFILE HAAR_CASCADES_DIR "haarcascade_mcs_eyepair_small.xml"
-#define DEFAULT_SCALE_FACTOR 1.1
-#define DEFAULT_FLAGS 0
+#define DEFAULT_SCALE_FACTOR 1.25
+#define DEFAULT_FLAGS CV_HAAR_DO_CANNY_PRUNING
 #define DEFAULT_MIN_NEIGHBORS 3
-#define DEFAULT_MIN_SIZE_WIDTH 0
-#define DEFAULT_MIN_SIZE_HEIGHT 0
+#define DEFAULT_MIN_SIZE_WIDTH 30
+#define DEFAULT_MIN_SIZE_HEIGHT 30
+#define DEFAULT_MIN_STDDEV 0
 
 /* Filter signals and args */
 enum
@@ -112,7 +118,9 @@ enum
   PROP_MIN_NEIGHBORS,
   PROP_FLAGS,
   PROP_MIN_SIZE_WIDTH,
-  PROP_MIN_SIZE_HEIGHT
+  PROP_MIN_SIZE_HEIGHT,
+  PROP_UPDATES,
+  PROP_MIN_STDDEV
 };
 
 
@@ -147,6 +155,32 @@ gst_opencv_face_detect_flags_get_type (void)
 
   g_once (&once, (GThreadFunc) register_gst_opencv_face_detect_flags, &id);
   return id;
+}
+
+#define GST_TYPE_FACE_DETECT_UPDATES (facedetect_update_get_type ())
+
+static GType
+facedetect_update_get_type (void)
+{
+  static GType facedetect_update_type = 0;
+  static const GEnumValue facedetect_update[] = {
+    {GST_FACEDETECT_UPDATES_EVERY_FRAME, "Send update messages on every frame",
+        "every_frame"},
+    {GST_FACEDETECT_UPDATES_ON_CHANGE,
+          "Send messages when a new face is detected or one is not anymore detected",
+        "on_change"},
+    {GST_FACEDETECT_UPDATES_ON_FACE,
+          "Send messages whenever a face is detected",
+        "on_face"},
+    {GST_FACEDETECT_UPDATES_NONE, "Send no messages update", "none"},
+    {0, NULL, NULL},
+  };
+
+  if (!facedetect_update_type) {
+    facedetect_update_type =
+        g_enum_register_static ("GstFaceDetectUpdates", facedetect_update);
+  }
+  return facedetect_update_type;
 }
 
 /* the capabilities of the inputs and outputs.
@@ -269,6 +303,19 @@ gst_face_detect_class_init (GstFaceDetectClass * klass)
       g_param_spec_int ("min-size-height", "Minimum face height",
           "Minimum area height to be recognized as a face", 0, G_MAXINT,
           DEFAULT_MIN_SIZE_HEIGHT, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_UPDATES,
+      g_param_spec_enum ("updates", "Updates",
+          "When send update bus messages, if at all",
+          GST_TYPE_FACE_DETECT_UPDATES, GST_FACEDETECT_UPDATES_EVERY_FRAME,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_MIN_STDDEV,
+      g_param_spec_int ("min-stddev", "Minimum image standard deviation",
+          "Minimum image average standard deviation: on images with standard "
+          "deviation lesser than this value facedetection will not be "
+          "performed. Setting this property help to save cpu and reduce "
+          "false positives not performing face detection on images with "
+          "little changes", 0,
+          255, DEFAULT_MIN_STDDEV, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_set_static_metadata (element_class,
       "facedetect",
@@ -293,11 +340,13 @@ gst_face_detect_init (GstFaceDetect * filter)
   filter->mouth_profile = g_strdup (DEFAULT_MOUTH_PROFILE);
   filter->eyes_profile = g_strdup (DEFAULT_EYES_PROFILE);
   filter->display = TRUE;
+  filter->face_detected = FALSE;
   filter->scale_factor = DEFAULT_SCALE_FACTOR;
   filter->min_neighbors = DEFAULT_MIN_NEIGHBORS;
   filter->flags = DEFAULT_FLAGS;
   filter->min_size_width = DEFAULT_MIN_SIZE_WIDTH;
   filter->min_size_height = DEFAULT_MIN_SIZE_HEIGHT;
+  filter->min_stddev = DEFAULT_MIN_STDDEV;
   filter->cvFaceDetect =
       gst_face_detect_load_profile (filter, filter->face_profile);
   filter->cvNoseDetect =
@@ -309,6 +358,7 @@ gst_face_detect_init (GstFaceDetect * filter)
 
   gst_opencv_video_filter_set_in_place (GST_OPENCV_VIDEO_FILTER_CAST (filter),
       TRUE);
+  filter->updates = GST_FACEDETECT_UPDATES_EVERY_FRAME;
 }
 
 static void
@@ -365,8 +415,14 @@ gst_face_detect_set_property (GObject * object, guint prop_id,
     case PROP_MIN_SIZE_HEIGHT:
       filter->min_size_height = g_value_get_int (value);
       break;
+    case PROP_MIN_STDDEV:
+      filter->min_stddev = g_value_get_int (value);
+      break;
     case PROP_FLAGS:
       filter->flags = g_value_get_flags (value);
+      break;
+    case PROP_UPDATES:
+      filter->updates = g_value_get_enum (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -408,8 +464,14 @@ gst_face_detect_get_property (GObject * object, guint prop_id,
     case PROP_MIN_SIZE_HEIGHT:
       g_value_set_int (value, filter->min_size_height);
       break;
+    case PROP_MIN_STDDEV:
+      g_value_set_int (value, filter->min_stddev);
+      break;
     case PROP_FLAGS:
       g_value_set_flags (value, filter->flags);
+      break;
+    case PROP_UPDATES:
+      g_value_set_enum (value, filter->updates);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -469,13 +531,26 @@ gst_face_detect_run_detector (GstFaceDetect * filter,
     CvHaarClassifierCascade * detector, gint min_size_width,
     gint min_size_height)
 {
-  return cvHaarDetectObjects (filter->cvGray, detector,
-      filter->cvStorage, filter->scale_factor, filter->min_neighbors,
-      filter->flags, cvSize (min_size_width, min_size_height)
+  double img_stddev = 0;
+  if (filter->min_stddev > 0) {
+    CvScalar mean, stddev;
+    cvAvgSdv (filter->cvGray, &mean, &stddev, NULL);
+    img_stddev = stddev.val[0];
+  }
+  if (img_stddev >= filter->min_stddev) {
+    return cvHaarDetectObjects (filter->cvGray, detector,
+        filter->cvStorage, filter->scale_factor, filter->min_neighbors,
+        filter->flags, cvSize (min_size_width, min_size_height)
 #if (CV_MAJOR_VERSION >= 2) && (CV_MINOR_VERSION >= 2)
-      , cvSize (min_size_width + 2, min_size_height + 2)
+        , cvSize (0, 0)
 #endif
-      );
+        );
+  } else {
+    GST_LOG_OBJECT (filter,
+        "Calculated stddev %f lesser than min_stddev %d, detection not performed",
+        img_stddev, filter->min_stddev);
+    return cvCreateSeq (0, sizeof (CvSeq), sizeof (CvPoint), filter->cvStorage);
+  }
 }
 
 /* 
@@ -496,6 +571,7 @@ gst_face_detect_transform_ip (GstOpencvVideoFilter * base, GstBuffer * buf,
     CvSeq *mouth = NULL, *nose = NULL, *eyes = NULL;
     gint i;
     gboolean do_display = FALSE;
+    gboolean post_msg = FALSE;
 
     if (filter->display) {
       if (gst_buffer_is_writable (buf)) {
@@ -511,8 +587,41 @@ gst_face_detect_transform_ip (GstOpencvVideoFilter * base, GstBuffer * buf,
     faces = gst_face_detect_run_detector (filter, filter->cvFaceDetect,
         filter->min_size_width, filter->min_size_height);
 
-    msg = gst_face_detect_message_new (filter, buf);
-    g_value_init (&facelist, GST_TYPE_LIST);
+    switch (filter->updates) {
+      case GST_FACEDETECT_UPDATES_EVERY_FRAME:
+        post_msg = TRUE;
+        break;
+      case GST_FACEDETECT_UPDATES_ON_CHANGE:
+        if (faces && faces->total > 0) {
+          if (!filter->face_detected)
+            post_msg = TRUE;
+        } else {
+          if (filter->face_detected) {
+            post_msg = TRUE;
+          }
+        }
+        break;
+      case GST_FACEDETECT_UPDATES_ON_FACE:
+        if (faces && faces->total > 0) {
+          post_msg = TRUE;
+        } else {
+          post_msg = FALSE;
+        }
+        break;
+      case GST_FACEDETECT_UPDATES_NONE:
+        post_msg = FALSE;
+        break;
+      default:
+        post_msg = TRUE;
+        break;
+    }
+
+    filter->face_detected = faces ? faces->total > 0 : FALSE;
+
+    if (post_msg) {
+      msg = gst_face_detect_message_new (filter, buf);
+      g_value_init (&facelist, GST_TYPE_LIST);
+    }
 
     for (i = 0; i < (faces ? faces->total : 0); i++) {
       CvRect *r = (CvRect *) cvGetSeqElem (faces, i);
@@ -572,48 +681,49 @@ gst_face_detect_transform_ip (GstOpencvVideoFilter * base, GstBuffer * buf,
           "%2d/%2d: x,y = %4u,%4u: w.h = %4u,%4u : features(e,n,m) = %d,%d,%d",
           i, faces->total, r->x, r->y, r->width, r->height,
           have_eyes, have_nose, have_mouth);
+      if (post_msg) {
+        s = gst_structure_new ("face",
+            "x", G_TYPE_UINT, r->x,
+            "y", G_TYPE_UINT, r->y,
+            "width", G_TYPE_UINT, r->width,
+            "height", G_TYPE_UINT, r->height, NULL);
+        if (have_nose) {
+          CvRect *sr = (CvRect *) cvGetSeqElem (nose, 0);
+          GST_LOG_OBJECT (filter, "nose/%d: x,y = %4u,%4u: w.h = %4u,%4u",
+              nose->total, rnx + sr->x, rny + sr->y, sr->width, sr->height);
+          gst_structure_set (s,
+              "nose->x", G_TYPE_UINT, rnx + sr->x,
+              "nose->y", G_TYPE_UINT, rny + sr->y,
+              "nose->width", G_TYPE_UINT, sr->width,
+              "nose->height", G_TYPE_UINT, sr->height, NULL);
+        }
+        if (have_mouth) {
+          CvRect *sr = (CvRect *) cvGetSeqElem (mouth, 0);
+          GST_LOG_OBJECT (filter, "mouth/%d: x,y = %4u,%4u: w.h = %4u,%4u",
+              mouth->total, rmx + sr->x, rmy + sr->y, sr->width, sr->height);
+          gst_structure_set (s,
+              "mouth->x", G_TYPE_UINT, rmx + sr->x,
+              "mouth->y", G_TYPE_UINT, rmy + sr->y,
+              "mouth->width", G_TYPE_UINT, sr->width,
+              "mouth->height", G_TYPE_UINT, sr->height, NULL);
+        }
+        if (have_eyes) {
+          CvRect *sr = (CvRect *) cvGetSeqElem (eyes, 0);
+          GST_LOG_OBJECT (filter, "eyes/%d: x,y = %4u,%4u: w.h = %4u,%4u",
+              eyes->total, rex + sr->x, rey + sr->y, sr->width, sr->height);
+          gst_structure_set (s,
+              "eyes->x", G_TYPE_UINT, rex + sr->x,
+              "eyes->y", G_TYPE_UINT, rey + sr->y,
+              "eyes->width", G_TYPE_UINT, sr->width,
+              "eyes->height", G_TYPE_UINT, sr->height, NULL);
+        }
 
-      s = gst_structure_new ("face",
-          "x", G_TYPE_UINT, r->x,
-          "y", G_TYPE_UINT, r->y,
-          "width", G_TYPE_UINT, r->width,
-          "height", G_TYPE_UINT, r->height, NULL);
-      if (have_nose) {
-        CvRect *sr = (CvRect *) cvGetSeqElem (nose, 0);
-        GST_LOG_OBJECT (filter, "nose/%d: x,y = %4u,%4u: w.h = %4u,%4u",
-            nose->total, rnx + sr->x, rny + sr->y, sr->width, sr->height);
-        gst_structure_set (s,
-            "nose->x", G_TYPE_UINT, rnx + sr->x,
-            "nose->y", G_TYPE_UINT, rny + sr->y,
-            "nose->width", G_TYPE_UINT, sr->width,
-            "nose->height", G_TYPE_UINT, sr->height, NULL);
+        g_value_init (&facedata, GST_TYPE_STRUCTURE);
+        g_value_take_boxed (&facedata, s);
+        gst_value_list_append_value (&facelist, &facedata);
+        g_value_unset (&facedata);
+        s = NULL;
       }
-      if (have_mouth) {
-        CvRect *sr = (CvRect *) cvGetSeqElem (mouth, 0);
-        GST_LOG_OBJECT (filter, "mouth/%d: x,y = %4u,%4u: w.h = %4u,%4u",
-            mouth->total, rmx + sr->x, rmy + sr->y, sr->width, sr->height);
-        gst_structure_set (s,
-            "mouth->x", G_TYPE_UINT, rmx + sr->x,
-            "mouth->y", G_TYPE_UINT, rmy + sr->y,
-            "mouth->width", G_TYPE_UINT, sr->width,
-            "mouth->height", G_TYPE_UINT, sr->height, NULL);
-      }
-      if (have_eyes) {
-        CvRect *sr = (CvRect *) cvGetSeqElem (eyes, 0);
-        GST_LOG_OBJECT (filter, "eyes/%d: x,y = %4u,%4u: w.h = %4u,%4u",
-            eyes->total, rex + sr->x, rey + sr->y, sr->width, sr->height);
-        gst_structure_set (s,
-            "eyes->x", G_TYPE_UINT, rex + sr->x,
-            "eyes->y", G_TYPE_UINT, rey + sr->y,
-            "eyes->width", G_TYPE_UINT, sr->width,
-            "eyes->height", G_TYPE_UINT, sr->height, NULL);
-      }
-
-      g_value_init (&facedata, GST_TYPE_STRUCTURE);
-      g_value_take_boxed (&facedata, s);
-      gst_value_list_append_value (&facelist, &facedata);
-      g_value_unset (&facedata);
-      s = NULL;
 
       if (do_display) {
         CvPoint center;
@@ -669,12 +779,16 @@ gst_face_detect_transform_ip (GstOpencvVideoFilter * base, GstBuffer * buf,
               1, 8, 0);
         }
       }
+      gst_buffer_add_video_region_of_interest_meta (buf, "face",
+          (guint) r->x, (guint) r->y, (guint) r->width, (guint) r->height);
     }
 
-    gst_structure_set_value ((GstStructure *) gst_message_get_structure (msg),
-        "faces", &facelist);
-    g_value_unset (&facelist);
-    gst_element_post_message (GST_ELEMENT (filter), msg);
+    if (post_msg) {
+      gst_structure_set_value ((GstStructure *) gst_message_get_structure (msg),
+          "faces", &facelist);
+      g_value_unset (&facelist);
+      gst_element_post_message (GST_ELEMENT (filter), msg);
+    }
   }
 
   return GST_FLOW_OK;
@@ -686,6 +800,8 @@ gst_face_detect_load_profile (GstFaceDetect * filter, gchar * profile)
 {
   CvHaarClassifierCascade *cascade;
 
+  if (profile == NULL)
+    return NULL;
   if (!(cascade = (CvHaarClassifierCascade *) cvLoad (profile, 0, 0, 0))) {
     GST_WARNING_OBJECT (filter, "Couldn't load Haar classifier cascade: %s.",
         profile);

@@ -47,12 +47,13 @@
 #include "gstinteraudiosink.h"
 #include <string.h>
 
+#define PERIOD    1600
+#define N_PERIODS 10
+
 GST_DEBUG_CATEGORY_STATIC (gst_inter_audio_sink_debug_category);
 #define GST_CAT_DEFAULT gst_inter_audio_sink_debug_category
 
 /* prototypes */
-
-
 static void gst_inter_audio_sink_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
 static void gst_inter_audio_sink_get_property (GObject * object,
@@ -63,6 +64,8 @@ static void gst_inter_audio_sink_get_times (GstBaseSink * sink,
     GstBuffer * buffer, GstClockTime * start, GstClockTime * end);
 static gboolean gst_inter_audio_sink_start (GstBaseSink * sink);
 static gboolean gst_inter_audio_sink_stop (GstBaseSink * sink);
+static gboolean gst_inter_audio_sink_set_caps (GstBaseSink * sink,
+    GstCaps * caps);
 static GstFlowReturn gst_inter_audio_sink_render (GstBaseSink * sink,
     GstBuffer * buffer);
 
@@ -73,19 +76,15 @@ enum
 };
 
 /* pad templates */
-
 static GstStaticPadTemplate gst_inter_audio_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("audio/x-raw, format = (string) " GST_AUDIO_NE (S16) ", "
-        "rate = (int) 48000, channels = (int) 2")
+    GST_STATIC_CAPS ("audio/x-raw")
     );
 
 
 /* class initialization */
-
-
 G_DEFINE_TYPE (GstInterAudioSink, gst_inter_audio_sink, GST_TYPE_BASE_SINK);
 
 static void
@@ -113,6 +112,7 @@ gst_inter_audio_sink_class_init (GstInterAudioSinkClass * klass)
       GST_DEBUG_FUNCPTR (gst_inter_audio_sink_get_times);
   base_sink_class->start = GST_DEBUG_FUNCPTR (gst_inter_audio_sink_start);
   base_sink_class->stop = GST_DEBUG_FUNCPTR (gst_inter_audio_sink_stop);
+  base_sink_class->set_caps = GST_DEBUG_FUNCPTR (gst_inter_audio_sink_set_caps);
   base_sink_class->render = GST_DEBUG_FUNCPTR (gst_inter_audio_sink_render);
 
   g_object_class_install_property (gobject_class, PROP_CHANNEL,
@@ -171,7 +171,6 @@ gst_inter_audio_sink_finalize (GObject * object)
   G_OBJECT_CLASS (gst_inter_audio_sink_parent_class)->finalize (object);
 }
 
-
 static void
 gst_inter_audio_sink_get_times (GstBaseSink * sink, GstBuffer * buffer,
     GstClockTime * start, GstClockTime * end)
@@ -183,15 +182,13 @@ gst_inter_audio_sink_get_times (GstBaseSink * sink, GstBuffer * buffer,
     if (GST_BUFFER_DURATION_IS_VALID (buffer)) {
       *end = *start + GST_BUFFER_DURATION (buffer);
     } else {
-      if (interaudiosink->fps_n > 0) {
+      if (interaudiosink->info.rate > 0) {
         *end = *start +
-            gst_util_uint64_scale_int (GST_SECOND, interaudiosink->fps_d,
-            interaudiosink->fps_n);
+            gst_util_uint64_scale_int (gst_buffer_get_size (buffer), GST_SECOND,
+            interaudiosink->info.rate * interaudiosink->info.bpf);
       }
     }
   }
-
-
 }
 
 static gboolean
@@ -199,9 +196,12 @@ gst_inter_audio_sink_start (GstBaseSink * sink)
 {
   GstInterAudioSink *interaudiosink = GST_INTER_AUDIO_SINK (sink);
 
-  GST_DEBUG ("start");
+  GST_DEBUG_OBJECT (interaudiosink, "start");
 
   interaudiosink->surface = gst_inter_surface_get (interaudiosink->channel);
+  g_mutex_lock (&interaudiosink->surface->mutex);
+  memset (&interaudiosink->surface->audio_info, 0, sizeof (GstAudioInfo));
+  g_mutex_unlock (&interaudiosink->surface->mutex);
 
   return TRUE;
 }
@@ -211,10 +211,11 @@ gst_inter_audio_sink_stop (GstBaseSink * sink)
 {
   GstInterAudioSink *interaudiosink = GST_INTER_AUDIO_SINK (sink);
 
-  GST_DEBUG ("stop");
+  GST_DEBUG_OBJECT (interaudiosink, "stop");
 
   g_mutex_lock (&interaudiosink->surface->mutex);
   gst_adapter_clear (interaudiosink->surface->audio_adapter);
+  memset (&interaudiosink->surface->audio_info, 0, sizeof (GstAudioInfo));
   g_mutex_unlock (&interaudiosink->surface->mutex);
 
   gst_inter_surface_unref (interaudiosink->surface);
@@ -223,22 +224,42 @@ gst_inter_audio_sink_stop (GstBaseSink * sink)
   return TRUE;
 }
 
+static gboolean
+gst_inter_audio_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
+{
+  GstInterAudioSink *interaudiosink = GST_INTER_AUDIO_SINK (sink);
+  GstAudioInfo info;
+
+  if (!gst_audio_info_from_caps (&info, caps)) {
+    GST_ERROR_OBJECT (sink, "Failed to parse caps %" GST_PTR_FORMAT, caps);
+    return FALSE;
+  }
+
+  g_mutex_lock (&interaudiosink->surface->mutex);
+  interaudiosink->surface->audio_info = info;
+  interaudiosink->info = info;
+  g_mutex_unlock (&interaudiosink->surface->mutex);
+
+  return TRUE;
+}
+
 static GstFlowReturn
 gst_inter_audio_sink_render (GstBaseSink * sink, GstBuffer * buffer)
 {
   GstInterAudioSink *interaudiosink = GST_INTER_AUDIO_SINK (sink);
-  int n;
+  int n, bpf;
 
-  GST_DEBUG ("render %" G_GSIZE_FORMAT, gst_buffer_get_size (buffer));
+  GST_DEBUG_OBJECT (interaudiosink, "render %" G_GSIZE_FORMAT,
+      gst_buffer_get_size (buffer));
+  bpf = interaudiosink->info.bpf;
 
   g_mutex_lock (&interaudiosink->surface->mutex);
   n = gst_adapter_available (interaudiosink->surface->audio_adapter) / 4;
-#define SIZE 1600
-  if (n > (SIZE * 3)) {
-    int n_chunks = (n / (SIZE / 2)) - 4;
-    GST_WARNING ("flushing %d samples", n_chunks * 800);
+  while (n > PERIOD * N_PERIODS) {
+    GST_WARNING_OBJECT (interaudiosink, "flushing %d samples", PERIOD / 2);
     gst_adapter_flush (interaudiosink->surface->audio_adapter,
-        n_chunks * (SIZE / 2) * 4);
+        (PERIOD / 2) * bpf);
+    n -= (PERIOD / 2);
   }
   gst_adapter_push (interaudiosink->surface->audio_adapter,
       gst_buffer_ref (buffer));

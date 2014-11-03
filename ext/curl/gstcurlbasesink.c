@@ -124,6 +124,10 @@ static size_t gst_curl_base_sink_transfer_write_cb (void *ptr, size_t size,
     size_t nmemb, void *stream);
 static size_t gst_curl_base_sink_transfer_data_buffer (GstCurlBaseSink * sink,
     void *curl_ptr, size_t block_size, guint * last_chunk);
+#ifndef GST_DISABLE_GST_DEBUG
+static int gst_curl_base_sink_debug_cb (CURL * handle, curl_infotype type,
+    char *data, size_t size, void *clientp);
+#endif
 static int gst_curl_base_sink_transfer_socket_cb (void *clientp,
     curl_socket_t curlfd, curlsocktype purpose);
 static gpointer gst_curl_base_sink_transfer_thread_func (gpointer data);
@@ -146,6 +150,26 @@ static size_t transfer_data_buffer (void *curl_ptr, TransferBuffer * buf,
 
 #define parent_class gst_curl_base_sink_parent_class
 G_DEFINE_TYPE (GstCurlBaseSink, gst_curl_base_sink, GST_TYPE_BASE_SINK);
+
+static gboolean
+gst_curl_base_sink_default_has_buffered_data_unlocked (GstCurlBaseSink * sink)
+{
+  return sink->transfer_buf->len > 0;
+}
+
+static gboolean
+gst_curl_base_sink_has_buffered_data_unlocked (GstCurlBaseSink * sink)
+{
+  GstCurlBaseSinkClass *klass;
+  gboolean res = FALSE;
+
+  klass = GST_CURL_BASE_SINK_GET_CLASS (sink);
+
+  if (klass->has_buffered_data_unlocked)
+    res = klass->has_buffered_data_unlocked (sink);
+
+  return res;
+}
 
 static void
 gst_curl_base_sink_class_init (GstCurlBaseSinkClass * klass)
@@ -179,6 +203,8 @@ gst_curl_base_sink_class_init (GstCurlBaseSinkClass * klass)
   klass->handle_transfer = handle_transfer;
   klass->transfer_read_cb = gst_curl_base_sink_transfer_read_cb;
   klass->transfer_data_buffer = gst_curl_base_sink_transfer_data_buffer;
+  klass->has_buffered_data_unlocked =
+      gst_curl_base_sink_default_has_buffered_data_unlocked;
 
   /* FIXME: check against souphttpsrc and use same names for same properties */
   g_object_class_install_property (gobject_class, PROP_LOCATION,
@@ -227,6 +253,7 @@ gst_curl_base_sink_init (GstCurlBaseSink * sink)
   sink->url = g_strdup (DEFAULT_URL);
   sink->transfer_thread_close = FALSE;
   sink->new_file = TRUE;
+  sink->error = NULL;
   sink->flow_ret = GST_FLOW_OK;
   sink->is_live = FALSE;
 }
@@ -311,20 +338,22 @@ gst_curl_base_sink_is_live (GstCurlBaseSink * sink)
 static GstFlowReturn
 gst_curl_base_sink_render (GstBaseSink * bsink, GstBuffer * buf)
 {
-  GstCurlBaseSink *sink = GST_CURL_BASE_SINK (bsink);
+  GstCurlBaseSink *sink;
   GstMapInfo map;
   guint8 *data;
   size_t size;
   GstFlowReturn ret;
+  gchar *error;
 
   GST_LOG ("enter render");
 
   sink = GST_CURL_BASE_SINK (bsink);
+
+  GST_OBJECT_LOCK (sink);
+
   gst_buffer_map (buf, &map, GST_MAP_READ);
   data = map.data;
   size = map.size;
-
-  GST_OBJECT_LOCK (sink);
 
   /* check if the transfer thread has encountered problems while the
    * pipeline thread was working elsewhere */
@@ -350,13 +379,23 @@ gst_curl_base_sink_render (GstBaseSink * bsink, GstBuffer * buf)
 
   /* wait for the transfer thread to send the data. This will be notified
    * either when transfer is completed by the curl read callback or by
-   * the thread function if an error has occured. */
+   * the thread function if an error has occurred. */
   gst_curl_base_sink_wait_for_transfer_thread_to_send_unlocked (sink);
 
 done:
+  gst_buffer_unmap (buf, &map);
+
+  /* Hand over error from transfer thread to streaming thread */
+  error = sink->error;
+  sink->error = NULL;
   ret = sink->flow_ret;
   GST_OBJECT_UNLOCK (sink);
-  gst_buffer_unmap (buf, &map);
+
+  if (error != NULL) {
+    GST_ERROR_OBJECT (sink, "%s", error);
+    GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, ("%s", error), (NULL));
+    g_free (error);
+  }
 
   GST_LOG ("exit render");
 
@@ -572,51 +611,130 @@ static gboolean
 gst_curl_base_sink_transfer_set_common_options_unlocked (GstCurlBaseSink * sink)
 {
   GstCurlBaseSinkClass *klass = GST_CURL_BASE_SINK_GET_CLASS (sink);
+  CURLcode res;
 
-#ifdef DEBUG
-  curl_easy_setopt (sink->curl, CURLOPT_VERBOSE, 1);
+#ifndef GST_DISABLE_GST_DEBUG
+  res = curl_easy_setopt (sink->curl, CURLOPT_VERBOSE, 1);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set verbose: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
+  res = curl_easy_setopt (sink->curl, CURLOPT_DEBUGDATA, sink);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set debug user_data: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
+  res = curl_easy_setopt (sink->curl, CURLOPT_DEBUGFUNCTION,
+      gst_curl_base_sink_debug_cb);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set debug functions: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
 #endif
 
-  curl_easy_setopt (sink->curl, CURLOPT_URL, sink->url);
+  res = curl_easy_setopt (sink->curl, CURLOPT_URL, sink->url);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set URL: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
 
-  curl_easy_setopt (sink->curl, CURLOPT_CONNECTTIMEOUT, sink->timeout);
+  res = curl_easy_setopt (sink->curl, CURLOPT_CONNECTTIMEOUT, sink->timeout);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set connection timeout: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
 
-  /* using signals in a multithreaded application is dangeous */
-  curl_easy_setopt (sink->curl, CURLOPT_NOSIGNAL, 1);
+  /* using signals in a multi-threaded application is dangerous */
+  res = curl_easy_setopt (sink->curl, CURLOPT_NOSIGNAL, 1);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set no signalling: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
 
   /* socket settings */
-  curl_easy_setopt (sink->curl, CURLOPT_SOCKOPTDATA, sink);
-  curl_easy_setopt (sink->curl, CURLOPT_SOCKOPTFUNCTION,
+  res = curl_easy_setopt (sink->curl, CURLOPT_SOCKOPTDATA, sink);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set sockopt user data: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
+  res = curl_easy_setopt (sink->curl, CURLOPT_SOCKOPTFUNCTION,
       gst_curl_base_sink_transfer_socket_cb);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set sockopt function: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
 
-  curl_easy_setopt (sink->curl, CURLOPT_READFUNCTION, klass->transfer_read_cb);
-  curl_easy_setopt (sink->curl, CURLOPT_READDATA, sink);
-  curl_easy_setopt (sink->curl, CURLOPT_WRITEFUNCTION,
+  res = curl_easy_setopt (sink->curl, CURLOPT_READDATA, sink);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set read user data: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
+  res = curl_easy_setopt (sink->curl, CURLOPT_READFUNCTION,
+      klass->transfer_read_cb);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set read function: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
+
+  res = curl_easy_setopt (sink->curl, CURLOPT_WRITEDATA, sink);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set write user data: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
+  res = curl_easy_setopt (sink->curl, CURLOPT_WRITEFUNCTION,
       gst_curl_base_sink_transfer_write_cb);
-  curl_easy_setopt (sink->curl, CURLOPT_WRITEDATA, sink);
+  if (res != CURLE_OK) {
+    sink->error = g_strdup_printf ("failed to set write function: %s",
+        curl_easy_strerror (res));
+    return FALSE;
+  }
 
+  GST_LOG ("common options set");
   return TRUE;
 }
 
 static gboolean
 gst_curl_base_sink_transfer_set_options_unlocked (GstCurlBaseSink * sink)
 {
-  gboolean res = FALSE;
   GstCurlBaseSinkClass *klass = GST_CURL_BASE_SINK_GET_CLASS (sink);
+  CURLcode res;
 
-  gst_curl_base_sink_transfer_set_common_options_unlocked (sink);
+  if (!gst_curl_base_sink_transfer_set_common_options_unlocked (sink)) {
+    return FALSE;
+  }
 
   /* authentication settings */
   if (sink->user != NULL && strlen (sink->user)) {
-    curl_easy_setopt (sink->curl, CURLOPT_USERNAME, sink->user);
-    curl_easy_setopt (sink->curl, CURLOPT_PASSWORD, sink->passwd);
+    res = curl_easy_setopt (sink->curl, CURLOPT_USERNAME, sink->user);
+    if (res != CURLE_OK) {
+      sink->error = g_strdup_printf ("failed to set user name: %s",
+          curl_easy_strerror (res));
+      return FALSE;
+    }
+    res = curl_easy_setopt (sink->curl, CURLOPT_PASSWORD, sink->passwd);
+    if (res != CURLE_OK) {
+      sink->error = g_strdup_printf ("failed to set password: %s",
+          curl_easy_strerror (res));
+      return FALSE;
+    }
   }
 
   if (klass->set_options_unlocked) {
-    res = klass->set_options_unlocked (sink);
+    return klass->set_options_unlocked (sink);
+  } else {
+    return FALSE;
   }
-
-  return res;
 }
 
 static size_t
@@ -647,7 +765,6 @@ gst_curl_base_sink_transfer_data_buffer (GstCurlBaseSink * sink,
     void *curl_ptr, size_t block_size, guint * last_chunk)
 {
   TransferBuffer *buffer;
-  size_t bytes_to_send;
 
   buffer = sink->transfer_buf;
   GST_LOG ("write buf len=%" G_GSIZE_FORMAT ", offset=%" G_GSIZE_FORMAT,
@@ -660,10 +777,7 @@ gst_curl_base_sink_transfer_data_buffer (GstCurlBaseSink * sink,
   }
 
   /* more data in buffer(s) */
-  bytes_to_send = transfer_data_buffer (curl_ptr, sink->transfer_buf,
-      block_size, last_chunk);
-
-  return bytes_to_send;
+  return transfer_data_buffer (curl_ptr, buffer, block_size, last_chunk);
 }
 
 static size_t
@@ -685,9 +799,19 @@ gst_curl_base_sink_transfer_read_cb (void *curl_ptr, size_t size, size_t nmemb,
    * then zero will be returned to indicate end of current transfer */
   GST_OBJECT_LOCK (sink);
   if (gst_curl_base_sink_wait_for_data_unlocked (sink) == FALSE) {
+
+    if (gst_curl_base_sink_has_buffered_data_unlocked (sink) &&
+        sink->transfer_thread_close) {
+      GST_WARNING_OBJECT (sink,
+          "discarding render data due to thread close flag");
+
+      GST_OBJECT_UNLOCK (sink);
+      return CURL_READFUNC_ABORT;
+    }
+
     if (klass->flush_data_unlocked) {
       bytes_to_send = klass->flush_data_unlocked (sink, curl_ptr,
-          max_bytes_to_send, sink->new_file);
+          max_bytes_to_send, sink->new_file, sink->transfer_thread_close);
 
       GST_OBJECT_UNLOCK (sink);
 
@@ -781,12 +905,15 @@ handle_transfer (GstCurlBaseSink * sink)
   timeout = sink->timeout;
   GST_OBJECT_UNLOCK (sink);
 
+  GST_DEBUG_OBJECT (sink, "handling transfers");
+
   /* Receiving CURLM_CALL_MULTI_PERFORM means that libcurl may have more data
      available to send or receive - call simply curl_multi_perform before
      poll() on more actions */
   do {
     m_code = curl_multi_perform (sink->multi_handle, &running_handles);
   } while (m_code == CURLM_CALL_MULTI_PERFORM);
+  GST_DEBUG_OBJECT (sink, "running handles: %d", running_handles);
 
   while (running_handles && (m_code == CURLM_OK)) {
     if (klass->transfer_prepare_poll_wait) {
@@ -800,16 +927,22 @@ handle_transfer (GstCurlBaseSink * sink)
       } else if (errno == EBUSY) {
         GST_DEBUG_OBJECT (sink, "poll stopped");
         retval = GST_FLOW_EOS;
+
+        GST_OBJECT_LOCK (sink);
+        if (gst_curl_base_sink_has_buffered_data_unlocked (sink))
+          GST_WARNING_OBJECT (sink,
+              "discarding render data due to thread close flag");
+        GST_OBJECT_UNLOCK (sink);
+
         goto fail;
       } else {
-        GST_DEBUG_OBJECT (sink, "poll failed: %s", g_strerror (errno));
-        GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, ("poll failed"), (NULL));
+        sink->error = g_strdup_printf ("poll failed: %s", g_strerror (errno));
         retval = GST_FLOW_ERROR;
         goto fail;
       }
     } else if (G_UNLIKELY (activated_fds == 0)) {
-      GST_DEBUG_OBJECT (sink, "poll timed out");
-      GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, ("poll timed out"), (NULL));
+      sink->error = g_strdup_printf ("poll timed out after %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (timeout * GST_SECOND));
       retval = GST_FLOW_ERROR;
       goto fail;
     }
@@ -818,12 +951,12 @@ handle_transfer (GstCurlBaseSink * sink)
     do {
       m_code = curl_multi_perform (sink->multi_handle, &running_handles);
     } while (m_code == CURLM_CALL_MULTI_PERFORM);
+    GST_DEBUG_OBJECT (sink, "running handles: %d", running_handles);
   }
 
   if (m_code != CURLM_OK) {
-    GST_DEBUG_OBJECT (sink, "curl multi error");
-    GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, ("%s",
-            curl_multi_strerror (m_code)), (NULL));
+    sink->error = g_strdup_printf ("failed to write data: %s",
+        curl_multi_strerror (m_code));
     retval = GST_FLOW_ERROR;
     goto fail;
   }
@@ -831,9 +964,8 @@ handle_transfer (GstCurlBaseSink * sink)
   /* problems still might have occurred on individual transfers even when
    * curl_multi_perform returns CURLM_OK */
   if ((e_code = gst_curl_base_sink_transfer_check (sink)) != CURLE_OK) {
-    GST_DEBUG_OBJECT (sink, "curl easy error");
-    GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, ("%s",
-            curl_easy_strerror (e_code)), (NULL));
+    sink->error = g_strdup_printf ("failed to transfer data: %s",
+        curl_easy_strerror (e_code));
     retval = GST_FLOW_ERROR;
     goto fail;
   }
@@ -850,6 +982,60 @@ fail:
   GST_OBJECT_UNLOCK (sink);
   return;
 }
+
+#ifndef GST_DISABLE_GST_DEBUG
+static int
+gst_curl_base_sink_debug_cb (CURL * handle, curl_infotype type, char *data,
+    size_t size, void *clientp)
+{
+  GstCurlBaseSink *sink = (GstCurlBaseSink *) clientp;
+  gchar *msg = NULL;
+
+  switch (type) {
+    case CURLINFO_TEXT:
+    case CURLINFO_HEADER_IN:
+    case CURLINFO_HEADER_OUT:
+      msg = g_memdup (data, size);
+      if (size > 0) {
+        msg[size - 1] = '\0';
+        g_strchomp (msg);
+      }
+      break;
+    default:
+      break;
+  }
+
+  switch (type) {
+    case CURLINFO_TEXT:
+      GST_DEBUG_OBJECT (sink, "%s", msg);
+      break;
+    case CURLINFO_HEADER_IN:
+      GST_DEBUG_OBJECT (sink, "incoming header: %s", msg);
+      break;
+    case CURLINFO_HEADER_OUT:
+      GST_DEBUG_OBJECT (sink, "outgoing header: %s", msg);
+      break;
+    case CURLINFO_DATA_IN:
+      GST_MEMDUMP_OBJECT (sink, "incoming data", (guint8 *) data, size);
+      break;
+    case CURLINFO_DATA_OUT:
+      GST_MEMDUMP_OBJECT (sink, "outgoing data", (guint8 *) data, size);
+      break;
+    case CURLINFO_SSL_DATA_IN:
+      GST_MEMDUMP_OBJECT (sink, "incoming ssl data", (guint8 *) data, size);
+      break;
+    case CURLINFO_SSL_DATA_OUT:
+      GST_MEMDUMP_OBJECT (sink, "outgoing ssl data", (guint8 *) data, size);
+      break;
+    default:
+      GST_DEBUG_OBJECT (sink, "unknown debug info type %d", type);
+      GST_MEMDUMP_OBJECT (sink, "unknown data", (guint8 *) data, size);
+      break;
+  }
+  g_free (msg);
+  return 0;
+}
+#endif
 
 /* This function gets called by libcurl after the socket() call but before
  * the connect() call. */
@@ -868,26 +1054,23 @@ gst_curl_base_sink_transfer_socket_cb (void *clientp, curl_socket_t curlfd,
     /* signal an unrecoverable error to the library which will close the socket
        and return CURLE_COULDNT_CONNECT
      */
+    GST_DEBUG_OBJECT (sink, "no curlfd");
     return 1;
   }
 
   gst_poll_fd_init (&sink->fd);
   sink->fd.fd = curlfd;
 
-  ret = ret && gst_poll_add_fd (sink->fdset, &sink->fd);
-  ret = ret && gst_poll_fd_ctl_write (sink->fdset, &sink->fd, TRUE);
-  ret = ret && gst_poll_fd_ctl_read (sink->fdset, &sink->fd, TRUE);
-  GST_DEBUG ("fd: %d", sink->fd.fd);
+  ret &= gst_poll_add_fd (sink->fdset, &sink->fd);
+  ret &= gst_poll_fd_ctl_write (sink->fdset, &sink->fd, TRUE);
+  ret &= gst_poll_fd_ctl_read (sink->fdset, &sink->fd, TRUE);
+  GST_DEBUG_OBJECT (sink, "fd: %d", sink->fd.fd);
   GST_OBJECT_LOCK (sink);
   gst_curl_base_sink_setup_dscp_unlocked (sink);
   GST_OBJECT_UNLOCK (sink);
 
   /* success */
-  if (ret) {
-    return 0;
-  } else {
-    return 1;
-  }
+  return ret ? 0 : 1;
 }
 
 static gboolean
@@ -927,8 +1110,7 @@ gst_curl_base_sink_transfer_thread_func (gpointer data)
   GST_LOG ("transfer thread started");
   GST_OBJECT_LOCK (sink);
   if (!gst_curl_base_sink_transfer_setup_unlocked (sink)) {
-    GST_DEBUG_OBJECT (sink, "curl setup error");
-    GST_ELEMENT_ERROR (sink, RESOURCE, WRITE, ("curl setup error"), (NULL));
+    /* no need to set sink->error, as it is set by the called function */
     sink->flow_ret = GST_FLOW_ERROR;
     goto done;
   }
@@ -939,16 +1121,13 @@ gst_curl_base_sink_transfer_thread_func (gpointer data)
     sink->new_file = FALSE;
 
     /* wait for data to arrive for this new file, if we get a new file name
-     * again before getting data we will simply skip transfering anything
+     * again before getting data we will simply skip transferring anything
      * for this file and go directly to the new file */
     data_available = gst_curl_base_sink_wait_for_data_unlocked (sink);
     if (data_available) {
       if (G_UNLIKELY (!klass->set_protocol_dynamic_options_unlocked (sink))) {
+        sink->error = g_strdup ("unexpected state");
         sink->flow_ret = GST_FLOW_ERROR;
-        GST_OBJECT_UNLOCK (sink);
-        GST_ELEMENT_ERROR (sink, RESOURCE, FAILED, ("Unexpected state."),
-            (NULL));
-        GST_OBJECT_LOCK (sink);
         goto done;
       }
     }
@@ -957,6 +1136,7 @@ gst_curl_base_sink_transfer_thread_func (gpointer data)
     GST_OBJECT_UNLOCK (sink);
 
     if (data_available) {
+      GST_LOG ("have data");
       if (!gst_curl_base_sink_is_live (sink)) {
         /* prepare transfer if needed */
         if (klass->prepare_transfer) {
@@ -967,17 +1147,21 @@ gst_curl_base_sink_transfer_thread_func (gpointer data)
           }
           GST_OBJECT_UNLOCK (sink);
         }
+        GST_LOG ("adding handle");
         curl_multi_add_handle (sink->multi_handle, sink->curl);
       }
 
       /* Start driving the transfer. */
       klass->handle_transfer (sink);
 
-      /* easy handle will be possibly re-used for next transfer, thus it needs to
-       * be removed from the multi stack and re-added again */
+      /* easy handle will be possibly re-used for next transfer, thus it needs
+       * to be removed from the multi stack and re-added again */
       if (!gst_curl_base_sink_is_live (sink)) {
+        GST_LOG ("removing handle");
         curl_multi_remove_handle (sink->multi_handle, sink->curl);
       }
+    } else {
+      GST_LOG ("have no data yet");
     }
 
     /* lock again before looping to check the thread closed flag */
@@ -985,6 +1169,7 @@ gst_curl_base_sink_transfer_thread_func (gpointer data)
   }
 
   if (sink->is_live) {
+    GST_LOG ("removing handle");
     curl_multi_remove_handle (sink->multi_handle, sink->curl);
   }
 
@@ -1018,24 +1203,27 @@ gst_curl_base_sink_transfer_setup_unlocked (GstCurlBaseSink * sink)
   if (sink->curl == NULL) {
     /* curl_easy_init automatically calls curl_global_init(3) */
     if ((sink->curl = curl_easy_init ()) == NULL) {
-      g_warning ("Failed to init easy handle");
+      sink->error = g_strdup ("failed to init curl easy handle");
       return FALSE;
     }
   }
 
   if (!gst_curl_base_sink_transfer_set_options_unlocked (sink)) {
-    g_warning ("Failed to setup easy handle");
-    GST_OBJECT_UNLOCK (sink);
+    if (!sink->error) {
+      sink->error = g_strdup ("failed to setup curl easy handle");
+    }
     return FALSE;
   }
 
-  /* init a multi stack (non-blocking interface to liburl) */
+  /* init a multi stack (non-blocking interface to libcurl) */
   if (sink->multi_handle == NULL) {
     if ((sink->multi_handle = curl_multi_init ()) == NULL) {
+      sink->error = g_strdup ("failed to init curl multi handle");
       return FALSE;
     }
   }
 
+  GST_LOG ("transfer setup done");
   return TRUE;
 }
 
@@ -1094,7 +1282,7 @@ static void
   GST_LOG ("waiting for buffer send to complete");
 
   /* this function should not check if the transfer thread is set to be closed
-   * since that flag only can be set by the EoS event (by the pipeline thread).
+   * since that flag only can be set by the EOS event (by the pipeline thread).
    * This can therefore never happen while this function is running since this
    * function also is called by the pipeline thread (in the render function) */
   while (!sink->transfer_cond->data_sent) {

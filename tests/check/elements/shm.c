@@ -72,6 +72,8 @@ setup_shm (void)
 static void
 teardown_shm (void)
 {
+  fail_unless (gst_element_set_state (src, GST_STATE_NULL) ==
+      GST_STATE_CHANGE_SUCCESS);
   gst_check_teardown_sink_pad (src);
   gst_check_teardown_src_pad (sink);
   gst_check_teardown_element (src);
@@ -82,6 +84,11 @@ GST_START_TEST (test_shm_sysmem_alloc)
 {
   GstBuffer *buf;
   GstState state, pending;
+  GstSegment segment;
+
+  gst_pad_push_event (srcpad, gst_event_new_stream_start ("test"));
+  gst_segment_init (&segment, GST_FORMAT_BYTES);
+  gst_pad_push_event (srcpad, gst_event_new_segment (&segment));
 
   buf = gst_buffer_new_allocate (NULL, 1000, NULL);
 
@@ -116,6 +123,12 @@ GST_START_TEST (test_shm_alloc)
   GstAllocator *alloc;
   GstAllocationParams params;
   guint size;
+  GstSegment segment;
+
+  gst_pad_push_event (srcpad, gst_event_new_stream_start ("test"));
+  gst_pad_push_event (srcpad, gst_event_new_caps (caps));
+  gst_segment_init (&segment, GST_FORMAT_BYTES);
+  gst_pad_push_event (srcpad, gst_event_new_segment (&segment));
 
   query = gst_query_new_allocation (caps, FALSE);
   gst_caps_unref (caps);
@@ -129,6 +142,8 @@ GST_START_TEST (test_shm_alloc)
   gst_query_unref (query);
 
   g_object_get (sink, "shm-size", &size, NULL);
+
+  size -= params.align | gst_memory_alignment;
 
   /* alloc buffer of max size, this way, it will block forever it a copy
    * is made inside shmsink*/
