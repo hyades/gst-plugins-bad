@@ -79,13 +79,6 @@ static GstStaticPadTemplate subpic_sink_factory =
     GST_STATIC_CAPS ("subpicture/x-dvd; subpicture/x-pgs")
     );
 
-static const guint32 default_clut[16] = {
-  0xb48080, 0x248080, 0x628080, 0xd78080,
-  0x808080, 0x808080, 0x808080, 0x808080,
-  0x808080, 0x808080, 0x808080, 0x808080,
-  0x808080, 0x808080, 0x808080, 0x808080
-};
-
 #define gst_dvd_spu_parent_class parent_class
 G_DEFINE_TYPE (GstDVDSpu, gst_dvd_spu, GST_TYPE_ELEMENT);
 
@@ -171,6 +164,8 @@ gst_dvd_spu_init (GstDVDSpu * dvdspu)
       gst_pad_new_from_static_template (&subpic_sink_factory, "subpicture");
   gst_pad_set_chain_function (dvdspu->subpic_sinkpad, gst_dvd_spu_subpic_chain);
   gst_pad_set_event_function (dvdspu->subpic_sinkpad, gst_dvd_spu_subpic_event);
+
+  GST_PAD_SET_PROXY_ALLOCATION (dvdspu->videosinkpad);
 
   gst_element_add_pad (GST_ELEMENT (dvdspu), dvdspu->videosinkpad);
   gst_element_add_pad (GST_ELEMENT (dvdspu), dvdspu->subpic_sinkpad);
@@ -788,22 +783,19 @@ gst_dvd_spu_advance_spu (GstDVDSpu * dvdspu, GstClockTime new_ts)
         GST_TIME_ARGS (state->next_ts), GST_TIME_ARGS (new_ts));
 
     if (!gstspu_execute_event (dvdspu)) {
-      GstClockTime vid_run_ts;
-
       /* No current command buffer, try and get one */
       SpuPacket *packet = (SpuPacket *) g_queue_pop_head (dvdspu->pending_spus);
 
       if (packet == NULL)
         return;                 /* No SPU packets available */
 
-      vid_run_ts =
-          gst_segment_to_running_time (&dvdspu->video_seg, GST_FORMAT_TIME,
-          dvdspu->video_seg.position);
       GST_LOG_OBJECT (dvdspu,
           "Popped new SPU packet with TS %" GST_TIME_FORMAT
           ". Video position=%" GST_TIME_FORMAT " (%" GST_TIME_FORMAT
           ") type %s",
-          GST_TIME_ARGS (packet->event_ts), GST_TIME_ARGS (vid_run_ts),
+          GST_TIME_ARGS (packet->event_ts),
+          GST_TIME_ARGS (gst_segment_to_running_time (&dvdspu->video_seg,
+                  GST_FORMAT_TIME, dvdspu->video_seg.position)),
           GST_TIME_ARGS (dvdspu->video_seg.position),
           packet->buf ? "buffer" : "event");
 
@@ -953,7 +945,7 @@ gst_dvd_spu_subpic_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
 
   switch (dvdspu->spu_input_type) {
     case SPU_INPUT_TYPE_VOBSUB:
-      if (size > 4) {
+      if (size >= 2) {
         guint8 header[2];
         guint16 packet_size;
 
@@ -961,6 +953,10 @@ gst_dvd_spu_subpic_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
         packet_size = GST_READ_UINT16_BE (header);
         if (packet_size == size) {
           submit_new_spu_packet (dvdspu, dvdspu->partial_spu);
+          dvdspu->partial_spu = NULL;
+        } else if (packet_size == 0) {
+          GST_LOG_OBJECT (dvdspu, "Discarding empty SPU buffer");
+          gst_buffer_unref (dvdspu->partial_spu);
           dvdspu->partial_spu = NULL;
         } else if (packet_size < size) {
           /* Somehow we collected too much - something is wrong. Drop the
@@ -1063,6 +1059,7 @@ gst_dvd_spu_subpic_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
     }
     case GST_EVENT_CUSTOM_DOWNSTREAM:
+    case GST_EVENT_CUSTOM_DOWNSTREAM_STICKY:
     case GST_EVENT_CUSTOM_DOWNSTREAM_OOB:
     {
       const GstStructure *structure = gst_event_get_structure (event);

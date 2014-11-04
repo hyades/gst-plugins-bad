@@ -1,22 +1,141 @@
-# German po for gst-plugins-bad 0.10.21.2
+# German po for gst-plugins-bad 1.4.1
 # Copyright (C) 2007 Free Software Foundation, Inc.
 # This file is distributed under the same license as the gst-plugins-bad package.
 # Andre Klapper <ak-47@gmx.net>, 2008.
-# Christian Kirbach <christian.kirbach@googlemail.com>, 2009, 2011.
+# Christian Kirbach <christian.kirbach@googlemail.com>, 2009, 2011, 2013.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: gst-plugins-bad 0.10.21.2\n"
+"Project-Id-Version: gst-plugins-bad 1.4.1\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2012-06-07 16:21+0200\n"
-"PO-Revision-Date: 2011-04-28 00:04+0200\n"
-"Last-Translator: Christian Kirbach <christian.kirbach@googlemail.com>\n"
+"POT-Creation-Date: 2014-09-24 11:38+0300\n"
+"PO-Revision-Date: 2014-08-31 19:37+0100\n"
+"Last-Translator: Christian Kirbach <christian.kirbach@gmail.com>\n"
 "Language-Team: German <translation-team-de@lists.sourceforge.net>\n"
 "Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 1.5.4\n"
+
+msgid "Internal data stream error."
+msgstr "Interner Datenstromfehler."
+
+msgid "format wasn't negotiated before get function"
+msgstr "das Format wurde vor der get-Funktion nicht ausgehandelt"
+
+msgid "default GStreamer sound events audiosink"
+msgstr "Voreingestellte GStreamer Tonereignis-Audioziel"
+
+msgid ""
+"GStreamer can play audio using any number of output elements. Some possible "
+"choices are osssink, pulsesink and alsasink. The audiosink can be a partial "
+"pipeline instea of just one element."
+msgstr ""
+"GStreamer kann Ton mit einer beliebigen Anzahl an Ausgabeelementen "
+"wiedergeben. Einige Wahlmöglichkeiten sind »osssink«, »pulsesink« und "
+"»alsasink«. Das Audioziel kann eine anteilige Weiterleitung anstelle eines "
+"einzigen Elements sein."
+
+msgid "description for default GStreamer sound events audiosink"
+msgstr "Beschreibung des voreingestellten GStreamer Tonereignis-Audioziel"
+
+msgid "Describes the selected audiosink element."
+msgstr "Beschreibt das gewählte Audioziel-Element."
+
+msgid "default GStreamer audiosink for Audio/Video Conferencing"
+msgstr "Voreingestelltes GStreamer-Audioziel für Ton- und Videokonferenzen"
+
+msgid ""
+"description for default GStreamer audiosink for Audio/Video Conferencing"
+msgstr ""
+"Beschreibung des voreingestellten GStreamer-Audioziel für Ton- und "
+"Videokonferenzen"
+
+msgid "default GStreamer audiosink for Music and Movies"
+msgstr "Voreingestelltes GStreamer-Audioziel für Musik und Filme"
+
+msgid "description for default GStreamer audiosink for Music and Movies"
+msgstr ""
+"Beschreibung des voreingestellten GStreamer-Audioziel für Musik und Filme"
+
+msgid "default GStreamer videosink"
+msgstr "Voreingestelltes GStreamer-Videoziel"
+
+msgid ""
+"GStreamer can play video using any number of output elements. Some possible "
+"choices are xvimagesink, ximagesink, sdlvideosink and aasink. The videosink "
+"can be a partial pipeline instead of just one element."
+msgstr ""
+"GStreamer kann Video mit einer beliebigen Anzahl an Ausgabeelementen "
+"wiedergeben. Einige Wahlmöglichkeiten sind »xvimagesink«, »ximagesink«, "
+"»sdlvideosink« und »aasink«. Das Videoziel kann eine anteilige Weiterleitung "
+"anstelle eines einzigen Elements sein."
+
+msgid "description for default GStreamer videosink"
+msgstr "Beschreibung des voreingestellten GStreamer-Videoziel"
+
+msgid "Describes the selected videosink element."
+msgstr "Beschreibt das gewählte Videoziel-Element."
+
+msgid "default GStreamer audiosrc"
+msgstr "Voreingestelltes GStreamer-audiosrc"
+
+msgid ""
+"GStreamer can record audio using any number of input elements. Some possible "
+"choices are osssrc, pulsesrc and alsasrc. The audio source can be a partial "
+"pipeline instead of just one element."
+msgstr ""
+"GStreamer kann Ton mit einer beliebigen Anzahl an Eingabeelementen "
+"aufzeichnen. Einige Wahlmöglichkeiten sind »osssrc«, »pulsesrc« und "
+"»alsasrc«. Die Audioquelle kann eine anteilige Weiterleitung anstelle eines "
+"einzigen Elements sein."
+
+msgid "description for default GStreamer audiosrc"
+msgstr "Beschreibung des voreingestellten GStreamer-audiosrc"
+
+msgid "Describes the selected audiosrc element."
+msgstr "Beschreibt das gewählte audiosrc-Element."
+
+msgid "default GStreamer videosrc"
+msgstr "Voreingestelltes GStreamer-videosrc"
+
+msgid ""
+"GStreamer can record video from any number of input elements. Some possible "
+"choices are v4lsrc, v4l2src and videotestsrc. The video source can be a "
+"partial pipeline instead of just one element."
+msgstr ""
+"GStreamer kann Video mit einer beliebigen Anzahl an Eingabeelementen "
+"aufzeichnen. Einige Wahlmöglichkeiten sind »v4lsrc«, »v4l2src« und "
+"»videotestsrc«. Die Videoquelle kann eine anteilige Weiterleitung anstelle "
+"eines einzigen Elements sein."
+
+msgid "description for default GStreamer videosrc"
+msgstr "Beschreibung des voreingestellten GStreamer-videosrc"
+
+msgid "Describes the selected videosrc element."
+msgstr "Beschreibt das gewählte videosrc-Element."
+
+msgid "default GStreamer visualization"
+msgstr "Voreingestellte GStreamer-Visualisierung"
+
+msgid ""
+"GStreamer can put visualization plugins in a pipeline to transform audio "
+"streams in video frames. Some possible choices are goom, goom2k1 and "
+"synaesthesia. The visualization plugin can be a partial pipeline instead of "
+"just one element."
+msgstr ""
+"GStreamer kann Visualisierungs-Plugins in eine Weiterleitung integrieren, um "
+"Audioströme in Videobilder umzuwandeln. Einige Wahlmöglichkeiten sind "
+"»goom«, »goom2k1« und »synaesthesia«. Das Visualisierungs-Plugin kann eine "
+"anteilige Weiterleitung anstelle eines einzigen Elements sein."
+
+msgid "description for default GStreamer visualization"
+msgstr "Beschreibung der voreingestellten GStreamer-Visualisierung"
+
+msgid "Describes the selected visualization element."
+msgstr "Beschreibt das gewählte Visualisierungselement."
 
 msgid "Could not read title information for DVD."
 msgstr "Die Titelinformationen der DVD konnten nicht gelesen werden."
@@ -39,22 +158,66 @@ msgstr ""
 msgid "Could not read DVD."
 msgstr "DVD konnten nicht gelesen werden."
 
+msgid "This file contains no playable streams."
+msgstr "Diese Datei enthält keine abspielbaren Ströme."
+
+msgid "Couldn't get the Manifest's URI"
+msgstr "Adresse der Frachtliste konnte nicht ermittelt werden"
+
+msgid "Failed to get fragment URL."
+msgstr "Ermitteln der Fragment-Adresse schlug fehl."
+
+msgid "Couldn't download fragments"
+msgstr "Fragmente konnten nicht heruntergeladen werden"
+
+msgid "Could not open sndfile stream for reading."
+msgstr "sndfile-Datenstrom konnte nicht zum Lesen geöffnet werden."
+
+msgid "Could not establish connection to sndio"
+msgstr "Es konnte keine Verbindung zu sndio hergestellt werden"
+
+msgid "Failed to query sndio capabilities"
+msgstr "Abfragen der sndio-Fähigkeiten schlug fehl"
+
+msgid "Could not configure sndio"
+msgstr "sndio konnte nicht eingestellt werden"
+
+msgid "Could not start sndio"
+msgstr "sndio konnten nicht gestartet werden"
+
+msgid "Internal data flow error."
+msgstr "Interner Datenstromfehler."
+
+msgid "Generated file has a larger preroll time than its streams duration"
+msgstr ""
+"Die erzeugte Datei hat eine größere Vorlaufzeit als die Dauer ihres "
+"Datenstroms"
+
+#, c-format
+msgid "Missing element '%s' - check your GStreamer installation."
+msgstr ""
+"Das Element »%s« fehlt - überprüfen Sie Ihre Installation von GStreamer."
+
+msgid "File location is set to NULL, please set it to a valid filename"
+msgstr ""
+"Dateiort ist als NULL festgelegt. Bitte legen Sie einen gültigen Dateinamen "
+"fest"
+
+msgid "Subpicture format was not configured before data flow"
+msgstr "Format des Unterbilds wurde nicht vor dem Datenfluss konfiguriert"
+
 msgid "No file name specified for writing."
 msgstr "Kein Dateiname zum Schreiben angegeben."
 
 #, c-format
-msgid "Could not open file \"%s\" for writing."
-msgstr "Datei »%s« konnte nicht zum Schreiben geöffnet werden."
-
-msgid "Internal data stream error."
-msgstr "Interner Datenstromfehler."
+msgid "Given file name \"%s\" can't be converted to local file name encoding."
+msgstr ""
+"Der gegebene Dateiname »%s« kann nicht in lokale Dateinamen-Kodierung "
+"umgewandelt werden."
 
 #, c-format
-msgid "Could not write to file \"%s\"."
-msgstr "Es konnte nicht in Datei »%s« geschrieben werden."
-
-msgid "Internal data flow error."
-msgstr "Interner Datenstromfehler."
+msgid "Could not open file \"%s\" for writing."
+msgstr "Datei »%s« konnte nicht zum Schreiben geöffnet werden."
 
 #, c-format
 msgid "Device \"%s\" does not exist."
@@ -70,8 +233,30 @@ msgstr ""
 "Einstellungen des Frontend-Geräts »%s« konnten nicht aufgerufen werden."
 
 #, c-format
+msgid "Cannot enumerate delivery systems from frontend device \"%s\"."
+msgstr ""
+"Ausliefersystem des Frontend-Geräts »%s« kann nicht durchgezählt werden."
+
+#, c-format
 msgid "Could not open file \"%s\" for reading."
 msgstr "Datei »%s« konnte nicht zum Lesen geöffnet werden."
+
+msgid "Couldn't find DVB channel configuration file"
+msgstr "DVB Kanal-Konfigurationsdatei konnte nicht gefunden werden"
+
+#, c-format
+msgid "Couldn't load DVB channel configuration file: %s"
+msgstr "DVB Kanal-Konfigurationsdatei konnte nicht geladen werden: %s"
+
+msgid "DVB channel configuration file doesn't contain any channels"
+msgstr "DVB Kanal-Konfigurationsdatei enthält keine Kanäle"
+
+#, c-format
+msgid "Couldn't find details for DVB channel %s"
+msgstr "Details zu DVB-Kanal %s konnten nicht gefunden werden"
+
+#~ msgid "Could not write to file \"%s\"."
+#~ msgstr "Es konnte nicht in Datei »%s« geschrieben werden."
 
 #~ msgid "Internal clock error."
 #~ msgstr "Interner Zeitfehler."
@@ -370,128 +555,3 @@ msgstr "Datei »%s« konnte nicht zum Lesen geöffnet werden."
 
 #~ msgid "Spread Output"
 #~ msgstr "Verteilter Ausgang"
-
-# Als Downmix wird im Bereich der Tontechnik ein manuelles oder automatisches Verfahren bezeichnet, bei dem der Ton eines Mehrkanal-Tonformats zu einer Fassung mit weniger unabhängigen Kanälen zusammengefasst wird. In den meisten Fällen ist dies eine Stereo-Fassung.
-#~ msgid "Downmix"
-#~ msgstr "Downmix"
-
-#~ msgid "Virtual Mixer Input"
-#~ msgstr "Eingang des virtuellen Mischers"
-
-#~ msgid "Virtual Mixer Output"
-#~ msgstr "Ausgang des virtuellen Mischers"
-
-#~ msgid "Virtual Mixer Channels"
-#~ msgstr "Kanäle des virtuellen Mischers"
-
-#~ msgid "%s Function"
-#~ msgstr "%s-Funktion"
-
-#~ msgid "%s %d"
-#~ msgstr "%s %d"
-
-#~ msgid ""
-#~ "Could not open audio device for playback. Device is being used by another "
-#~ "application."
-#~ msgstr ""
-#~ "Das Audio-Gerät konnte nicht zur Wiedergabe geöffnet werden. Das Gerät "
-#~ "wird von einer anderen Anwendung verwendet."
-
-#~ msgid ""
-#~ "Could not open audio device for playback. You don't have permission to "
-#~ "open the device."
-#~ msgstr ""
-#~ "Das Audio-Gerät konnte nicht zur Wiedergabe geöffnet werden.  Sie haben "
-#~ "nicht die Berechtigungen zum Öffnen des Gerätes."
-
-#~ msgid "Could not open audio device for playback."
-#~ msgstr "Das Audio-Gerät konnte nicht zur Wiedergabe geöffnet werden. "
-
-#~ msgid ""
-#~ "Could not open audio device for playback. This version of the Open Sound "
-#~ "System is not supported by this element."
-#~ msgstr ""
-#~ "Das Audio-Gerät konnte nicht zur Wiedergabe geöffnet werden. Diese "
-#~ "Version des Open Sound System (OSS) wird nicht von diesem Element "
-#~ "unterstützt."
-
-#~ msgid "Playback is not supported by this audio device."
-#~ msgstr "Die Wiedergabe wird nicht von diesem Audio-Gerät unterstützt."
-
-#~ msgid "Audio playback error."
-#~ msgstr "Fehler bei Audio-Wiedergabe."
-
-#~ msgid "Recording is not supported by this audio device."
-#~ msgstr "Die Aufnahme wird nicht von diesem Audio-Gerät unterstützt."
-
-#~ msgid "Error recording from audio device."
-#~ msgstr "Fehler bei der Aufnahme vom Audio-Gerät."
-
-#~ msgid "PCM 1"
-#~ msgstr "PCM 1"
-
-#~ msgid "PCM 2"
-#~ msgstr "PCM 2"
-
-#~ msgid "PCM 3"
-#~ msgstr "PCM 3"
-
-#~ msgid "PCM 4"
-#~ msgstr "PCM 4"
-
-#~ msgid "Green connector function"
-#~ msgstr "Funktion des grünen Steckers"
-
-#~ msgid "Green front panel connector function"
-#~ msgstr "Funktion des grünen Frontsteckers"
-
-#~ msgid "Pink connector function"
-#~ msgstr "Funktion des rosa Steckers"
-
-#~ msgid "Pink front panel connector function"
-#~ msgstr "Funktion des rosa Frontsteckers"
-
-#~ msgid "Blue connector function"
-#~ msgstr "Funktion des blauen Steckers"
-
-#~ msgid "Blue front panel connector function"
-#~ msgstr "Funktion des blauen Frontsteckers"
-
-#~ msgid "Orange connector function"
-#~ msgstr "Funktion des orangen Steckers"
-
-#~ msgid "Orange front panel connector function"
-#~ msgstr "Funktion des orangen Frontsteckers"
-
-#~ msgid "Black connector function"
-#~ msgstr "Funktion des schwarzen Steckers"
-
-#~ msgid "Black front panel connector function"
-#~ msgstr "Funktion des schwarzen Frontsteckers"
-
-#~ msgid "Gray connector function"
-#~ msgstr "Funktion des grauen Steckers"
-
-#~ msgid "Gray front panel connector function"
-#~ msgstr "Funktion des grauen Frontsteckers"
-
-#~ msgid "White connector function"
-#~ msgstr "Funktion des weißen Steckers"
-
-#~ msgid "White front panel connector function"
-#~ msgstr "Funktion des weißen Frontsteckers"
-
-#~ msgid "Red connector function"
-#~ msgstr "Funktion des roten Steckers"
-
-#~ msgid "Red front panel connector function"
-#~ msgstr "Funktion des roten Frontsteckers"
-
-#~ msgid "Yellow connector function"
-#~ msgstr "Funktion des gelben Steckers"
-
-#~ msgid "Yellow front panel connector function"
-#~ msgstr "Funktion des gelben Frontsteckers"
-
-#~ msgid "Virtual mixer channel configuration"
-#~ msgstr "Konfiguration des virtuellen Mischers"

@@ -82,7 +82,7 @@ enum
 {
   PROP_0,
   PROP_MODE,
-  PROP_DEVICE
+  PROP_DEVICE_NUMBER
 };
 
 /* pad templates */
@@ -120,18 +120,15 @@ gst_decklink_sink_class_init (GstDecklinkSinkClass * klass)
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
               G_PARAM_CONSTRUCT)));
 
-  /* FIXME: should be device-number or so, or turned into a string */
-#if 0
-  g_object_class_install_property (gobject_class, PROP_DEVICE,
-      g_param_spec_int ("device", "Device", "Capture device instance to use",
-          0, G_MAXINT, 0,
+  g_object_class_install_property (gobject_class, PROP_DEVICE_NUMBER,
+      g_param_spec_int ("device-number", "Device number",
+          "Output device instance to use", 0, G_MAXINT, 0,
           (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
               G_PARAM_CONSTRUCT)));
-#endif
 
   gst_element_class_add_pad_template (element_class,
       gst_pad_template_new ("videosink", GST_PAD_SINK, GST_PAD_ALWAYS,
-      gst_decklink_mode_get_template_caps ()));
+          gst_decklink_mode_get_template_caps ()));
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_decklink_sink_audiosink_template));
@@ -161,8 +158,6 @@ gst_decklink_sink_init (GstDecklinkSink * decklinksink)
       GST_DEBUG_FUNCPTR (gst_decklink_sink_videosink_query));
   gst_element_add_pad (GST_ELEMENT (decklinksink), decklinksink->videosinkpad);
 
-
-
   decklinksink->audiosinkpad =
       gst_pad_new_from_static_template (&gst_decklink_sink_audiosink_template,
       "audiosink");
@@ -182,7 +177,7 @@ gst_decklink_sink_init (GstDecklinkSink * decklinksink)
   g_cond_init (&decklinksink->audio_cond);
 
   decklinksink->mode = GST_DECKLINK_MODE_NTSC;
-  decklinksink->device = 0;
+  decklinksink->device_number = 0;
 
   decklinksink->callback = new Output;
   decklinksink->callback->decklinksink = decklinksink;
@@ -219,8 +214,8 @@ gst_decklink_sink_set_property (GObject * object, guint property_id,
     case PROP_MODE:
       decklinksink->mode = (GstDecklinkModeEnum) g_value_get_enum (value);
       break;
-    case PROP_DEVICE:
-      decklinksink->device = g_value_get_int (value);
+    case PROP_DEVICE_NUMBER:
+      decklinksink->device_number = g_value_get_int (value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -241,8 +236,8 @@ gst_decklink_sink_get_property (GObject * object, guint property_id,
     case PROP_MODE:
       g_value_set_enum (value, decklinksink->mode);
       break;
-    case PROP_DEVICE:
-      g_value_set_int (value, decklinksink->device);
+    case PROP_DEVICE_NUMBER:
+      g_value_set_int (value, decklinksink->device_number);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -324,6 +319,7 @@ gst_decklink_sink_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+/* FIXME: post error messages for the misc. failures */
 static gboolean
 gst_decklink_sink_start (GstDecklinkSink * decklinksink)
 {
@@ -331,13 +327,19 @@ gst_decklink_sink_start (GstDecklinkSink * decklinksink)
   const GstDecklinkMode *mode;
   BMDAudioSampleType sample_depth;
 
-  decklinksink->decklink = gst_decklink_get_nth_device (decklinksink->device);
+  decklinksink->decklink =
+      gst_decklink_get_nth_device (decklinksink->device_number);
   if (!decklinksink->decklink) {
-    GST_WARNING ("failed to get device %d", decklinksink->device);
+    GST_WARNING ("failed to get device %d", decklinksink->device_number);
     return FALSE;
   }
 
-  decklinksink->output = gst_decklink_get_nth_output (decklinksink->device);
+  decklinksink->output =
+      gst_decklink_get_nth_output (decklinksink->device_number);
+  if (!decklinksink->decklink) {
+    GST_WARNING ("no output for device %d", decklinksink->device_number);
+    return FALSE;
+  }
 
   decklinksink->output->SetAudioCallback (decklinksink->callback);
 
@@ -442,8 +444,9 @@ gst_decklink_sink_videosink_chain (GstPad * pad, GstObject * parent,
   GstDecklinkSink *decklinksink;
   IDeckLinkMutableVideoFrame *frame;
   void *data;
-  GstFlowReturn ret;
+  GstFlowReturn flow_ret;
   const GstDecklinkMode *mode;
+  HRESULT ret;
 
   decklinksink = GST_DECKLINK_SINK (parent);
 
@@ -462,9 +465,14 @@ gst_decklink_sink_videosink_chain (GstPad * pad, GstObject * parent,
 
   mode = gst_decklink_get_mode (decklinksink->mode);
 
-  decklinksink->output->CreateVideoFrame (mode->width,
+  ret = decklinksink->output->CreateVideoFrame (mode->width,
       mode->height, mode->width * 2, decklinksink->pixel_format,
       bmdFrameFlagDefault, &frame);
+  if (ret != S_OK) {
+    GST_ELEMENT_ERROR (decklinksink, STREAM, FAILED,
+        (NULL), ("Failed to create video frame: 0x%08x", ret));
+    return GST_FLOW_ERROR;
+  }
 
   frame->GetBytes (&data);
   gst_buffer_extract (buffer, 0, data, gst_buffer_get_size (buffer));
@@ -480,23 +488,37 @@ gst_decklink_sink_videosink_chain (GstPad * pad, GstObject * parent,
   g_mutex_unlock (&decklinksink->mutex);
 
   if (!decklinksink->stop) {
-    decklinksink->output->ScheduleVideoFrame (frame,
+    ret = decklinksink->output->ScheduleVideoFrame (frame,
         decklinksink->num_frames * mode->fps_d, mode->fps_d, mode->fps_n);
+    if (ret != S_OK) {
+      GST_ELEMENT_ERROR (decklinksink, STREAM, FAILED,
+          (NULL), ("Failed to schedule frame: 0x%08x", ret));
+      flow_ret = GST_FLOW_ERROR;
+      goto out;
+    }
+
     decklinksink->num_frames++;
 
     if (!decklinksink->sched_started) {
-      decklinksink->output->StartScheduledPlayback (0, mode->fps_d, 1.0);
+      ret = decklinksink->output->StartScheduledPlayback (0, mode->fps_d, 1.0);
+      if (ret != S_OK) {
+        GST_ELEMENT_ERROR (decklinksink, STREAM, FAILED,
+            (NULL), ("Failed to start scheduled playback: 0x%08x", ret));
+        flow_ret = GST_FLOW_ERROR;
+        goto out;
+      }
       decklinksink->sched_started = TRUE;
     }
 
-    ret = GST_FLOW_OK;
+    flow_ret = GST_FLOW_OK;
   } else {
-    ret = GST_FLOW_FLUSHING;
+    flow_ret = GST_FLOW_FLUSHING;
   }
 
+out:
   frame->Release ();
 
-  return ret;
+  return flow_ret;
 }
 
 static gboolean
@@ -511,9 +533,11 @@ gst_decklink_sink_videosink_event (GstPad * pad, GstObject * parent,
   GST_DEBUG_OBJECT (pad, "event: %" GST_PTR_FORMAT, event);
 
   switch (GST_EVENT_TYPE (event)) {
-    /* FIXME: this makes no sense, template caps don't contain v210 */
-#if 0
     case GST_EVENT_CAPS:{
+      decklinksink->pixel_format = bmdFormat8BitYUV;
+      res = TRUE;
+      /* FIXME: this makes no sense, template caps don't contain v210 */
+#if 0
       GstCaps *caps;
 
       gst_event_parse_caps (event, &caps);
@@ -525,9 +549,9 @@ gst_decklink_sink_videosink_event (GstPad * pad, GstObject * parent,
           decklinksink->pixel_format = bmdFormat8BitYUV;
         }
       }
+#endif
       break;
     }
-#endif
     case GST_EVENT_EOS:
       /* FIXME: EOS aggregation with audio pad looks wrong */
       decklinksink->video_eos = TRUE;
@@ -568,8 +592,14 @@ gst_decklink_sink_videosink_query (GstPad * pad, GstObject * parent,
        * should probably return the template caps instead */
       mode_caps = gst_decklink_mode_get_caps (decklinksink->mode);
       gst_query_parse_caps (query, &filter);
-      caps = gst_caps_intersect (mode_caps, filter);
-      gst_caps_unref (mode_caps);
+      if (filter) {
+        caps =
+            gst_caps_intersect_full (filter, mode_caps,
+            GST_CAPS_INTERSECT_FIRST);
+        gst_caps_unref (mode_caps);
+      } else {
+        caps = mode_caps;
+      }
       gst_query_set_caps_result (query, caps);
       gst_caps_unref (caps);
       res = TRUE;
@@ -675,6 +705,7 @@ HRESULT
 Output::RenderAudioSamples (bool preroll)
 {
   uint32_t samplesWritten;
+  HRESULT ret;
 
   // guint64 samplesToWrite;
 
@@ -692,12 +723,17 @@ Output::RenderAudioSamples (bool preroll)
     if (n > 0) {
       data = gst_adapter_map (decklinksink->audio_adapter, n);
 
-      decklinksink->output->ScheduleAudioSamples ((void *) data, n / 4,
+      ret = decklinksink->output->ScheduleAudioSamples ((void *) data, n / 4,
           0, 0, &samplesWritten);
 
       gst_adapter_unmap (decklinksink->audio_adapter);
       gst_adapter_flush (decklinksink->audio_adapter, samplesWritten * 4);
-      GST_DEBUG ("wrote %d samples, %d available", samplesWritten, n / 4);
+      if (ret != S_OK) {
+        GST_ELEMENT_ERROR (decklinksink, STREAM, FAILED,
+            (NULL), ("Failed to schedule audio samples: 0x%08x", ret));
+      } else {
+        GST_DEBUG ("wrote %d samples, %d available", samplesWritten, n / 4);
+      }
 
       g_cond_signal (&decklinksink->audio_cond);
     } else {

@@ -268,19 +268,6 @@ id3v2_frame_write_uint32 (GstId3v2Frame * frame, guint32 val)
   frame->dirty = TRUE;
 }
 
-static inline void
-id3v2_frame_write_uint32_syncsafe (GstId3v2Frame * frame, guint32 val)
-{
-  guint8 data[4];
-
-  data[0] = (guint8) ((val >> 21) & 0x7f);
-  data[1] = (guint8) ((val >> 14) & 0x7f);
-  data[2] = (guint8) ((val >> 7) & 0x7f);
-  data[3] = (guint8) ((val >> 0) & 0x7f);
-  gst_byte_writer_write_bytes (frame->writer, data, 4);
-  frame->dirty = TRUE;
-}
-
 static void
 id3v2_frame_init (GstId3v2Frame * frame, const gchar * frame_id, guint16 flags)
 {
@@ -726,10 +713,16 @@ add_image_tag (GstId3v2Tag * id3v2tag, const GstTagList * list,
       s = gst_caps_get_structure (caps, 0);
       mime_type = gst_structure_get_name (s);
       if (mime_type != NULL) {
-        const gchar *desc;
+        const gchar *desc = NULL;
         GstId3v2Frame frame;
         GstMapInfo mapinfo;
         int encoding;
+        const GstStructure *info_struct;
+
+        info_struct = gst_sample_get_info (sample);
+        if (!info_struct
+            || !gst_structure_has_name (info_struct, "GstTagImageInfo"))
+          info_struct = NULL;
 
         /* APIC frame specifies "-->" if we're providing a URL to the image
            rather than directly embedding it */
@@ -741,7 +734,8 @@ add_image_tag (GstId3v2Tag * id3v2tag, const GstTagList * list,
 
         id3v2_frame_init (&frame, "APIC", 0);
 
-        desc = gst_structure_get_string (s, "image-description");
+        if (info_struct)
+          desc = gst_structure_get_string (info_struct, "image-description");
         if (!desc)
           desc = "";
         encoding = id3v2_tag_string_encoding (id3v2tag, desc);
@@ -749,11 +743,25 @@ add_image_tag (GstId3v2Tag * id3v2tag, const GstTagList * list,
 
         id3v2_frame_write_string (&frame, encoding, mime_type, TRUE);
 
-        /* FIXME set image type properly from caps */
-        if (strcmp (tag, GST_TAG_PREVIEW_IMAGE) == 0)
+        if (strcmp (tag, GST_TAG_PREVIEW_IMAGE) == 0) {
           id3v2_frame_write_uint8 (&frame, ID3V2_APIC_PICTURE_FILE_ICON);
-        else
-          id3v2_frame_write_uint8 (&frame, ID3V2_APIC_PICTURE_OTHER);
+        } else {
+          int image_type = ID3V2_APIC_PICTURE_OTHER;
+
+          if (info_struct) {
+            if (gst_structure_get (info_struct, "image-type",
+                    GST_TYPE_TAG_IMAGE_TYPE, &image_type, NULL)) {
+              if (image_type > 0 && image_type <= 18) {
+                image_type += 2;
+              } else {
+                image_type = ID3V2_APIC_PICTURE_OTHER;
+              }
+            } else {
+              image_type = ID3V2_APIC_PICTURE_OTHER;
+            }
+          }
+          id3v2_frame_write_uint8 (&frame, image_type);
+        }
 
         id3v2_frame_write_string (&frame, encoding, desc, TRUE);
 
@@ -1078,6 +1086,9 @@ static const struct
   GST_TAG_COMPOSER, add_text_tag, "TCOM"}, {
   GST_TAG_GENRE, add_text_tag, "TCON"}, {
   GST_TAG_ENCODED_BY, add_text_tag, "TENC"}, {
+  GST_TAG_PUBLISHER, add_text_tag, "TPUB"}, {
+  GST_TAG_INTERPRETED_BY, add_text_tag, "TPE4"}, {
+  GST_TAG_MUSICAL_KEY, add_text_tag, "TKEY"}, {
 
     /* Private frames */
   GST_ID3_DEMUX_TAG_ID3V2_FRAME, add_id3v2frame_tag, NULL}, {

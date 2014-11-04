@@ -126,7 +126,6 @@ static gboolean gst_faac_configure_source_pad (GstFaac * faac,
     GstAudioInfo * info);
 static GstCaps *gst_faac_getcaps (GstAudioEncoder * enc, GstCaps * filter);
 
-static gboolean gst_faac_start (GstAudioEncoder * enc);
 static gboolean gst_faac_stop (GstAudioEncoder * enc);
 static gboolean gst_faac_set_format (GstAudioEncoder * enc,
     GstAudioInfo * info);
@@ -207,7 +206,6 @@ gst_faac_class_init (GstFaacClass * klass)
       "Free MPEG-2/4 AAC encoder",
       "Ronald Bultje <rbultje@ronald.bitfreak.net>");
 
-  base_class->start = GST_DEBUG_FUNCPTR (gst_faac_start);
   base_class->stop = GST_DEBUG_FUNCPTR (gst_faac_stop);
   base_class->set_format = GST_DEBUG_FUNCPTR (gst_faac_set_format);
   base_class->handle_frame = GST_DEBUG_FUNCPTR (gst_faac_handle_frame);
@@ -257,15 +255,6 @@ gst_faac_close_encoder (GstFaac * faac)
   if (faac->handle)
     faacEncClose (faac->handle);
   faac->handle = NULL;
-}
-
-static gboolean
-gst_faac_start (GstAudioEncoder * enc)
-{
-  GstFaac *faac = GST_FAAC (enc);
-
-  GST_DEBUG_OBJECT (faac, "start");
-  return TRUE;
 }
 
 static gboolean
@@ -644,6 +633,7 @@ gst_faac_handle_frame (GstAudioEncoder * enc, GstBuffer * in_buf)
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *out_buf;
   gsize size, ret_size;
+  int enc_ret;
   GstMapInfo map, omap;
   guint8 *data;
   GstAudioInfo *info =
@@ -668,9 +658,10 @@ gst_faac_handle_frame (GstAudioEncoder * enc, GstBuffer * in_buf)
     size = 0;
   }
 
-  if (G_UNLIKELY ((ret_size = faacEncEncode (faac->handle, (gint32 *) data,
+  if (G_UNLIKELY ((enc_ret = faacEncEncode (faac->handle, (gint32 *) data,
                   size / (info->finfo->width / 8), omap.data, omap.size)) < 0))
     goto encode_failed;
+  ret_size = enc_ret;
 
   if (in_buf)
     gst_buffer_unmap (in_buf, &map);

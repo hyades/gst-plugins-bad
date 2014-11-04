@@ -70,7 +70,7 @@ cam_conditional_access_destroy (CamConditionalAccess * cas)
 }
 
 static CamReturn
-send_ca_pmt (CamConditionalAccess * cas, GstStructure * pmt,
+send_ca_pmt (CamConditionalAccess * cas, GstMpegtsPMT * pmt,
     guint8 list_management, guint8 cmd_id)
 {
   CamReturn ret;
@@ -108,7 +108,7 @@ send_ca_pmt (CamConditionalAccess * cas, GstStructure * pmt,
 
 CamReturn
 cam_conditional_access_set_pmt (CamConditionalAccess * cas,
-    GstStructure * pmt, CamConditionalAccessPmtFlag flag)
+    GstMpegtsPMT * pmt, CamConditionalAccessPmtFlag flag)
 {
   return send_ca_pmt (cas, pmt, flag, 0x01 /* ok_descrambling */ );
 }
@@ -137,7 +137,7 @@ static CamReturn
 send_conditional_access_enquiry (CamConditionalAccess * cas,
     CamSLSession * session)
 {
-  GST_DEBUG ("sending application cas enquiry");
+  GST_DEBUG ("sending application CAS enquiry");
   return send_simple (cas, session, TAG_CONDITIONAL_ACCESS_INFO_ENQUIRY);
 }
 
@@ -172,6 +172,7 @@ static CamReturn
 handle_conditional_access_info_reply (CamConditionalAccess * cas,
     CamSLSession * session, guint8 * buffer, guint length)
 {
+#ifndef GST_DISABLE_GST_DEBUG
   int i;
   guint16 cas_id;
 
@@ -186,6 +187,7 @@ handle_conditional_access_info_reply (CamConditionalAccess * cas,
   }
 
   cas->ready = TRUE;
+#endif
 
   return CAM_RETURN_OK;
 }
@@ -194,6 +196,7 @@ static CamReturn
 handle_conditional_access_pmt_reply (CamConditionalAccess * cas,
     CamSLSession * session, guint8 * buffer, guint length)
 {
+#ifndef GST_DISABLE_GST_DEBUG
   guint16 program_num;
   guint8 version_num, current_next_indicator;
 
@@ -226,6 +229,7 @@ handle_conditional_access_pmt_reply (CamConditionalAccess * cas,
 
     length -= 3;
   }
+#endif
 
   return CAM_RETURN_OK;
 }

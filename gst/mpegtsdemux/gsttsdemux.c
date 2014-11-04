@@ -21,6 +21,7 @@
 #include "config.h"
 #endif
 
+#include <gst/mpegts/mpegts.h>
 #include "mpegtsbase.h"
 #include "mpegtspacketizer.h"
 #include "mpegtsparse.h"
@@ -30,6 +31,7 @@
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
+  gst_mpegts_initialize ();
   if (!gst_mpegtsbase_plugin_init (plugin))
     return FALSE;
   if (!gst_mpegtsparse_plugin_init (plugin))
@@ -43,5 +45,4 @@ GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     mpegtsdemux,
     "MPEG TS demuxer",
-    plugin_init, VERSION,
-    GST_LICENSE_UNKNOWN, GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN);
+    plugin_init, VERSION, "LGPL", GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN);

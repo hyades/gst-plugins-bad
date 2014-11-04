@@ -53,7 +53,7 @@ const GstMetaInfo * gst_mpeg_video_meta_get_info (void);
  * Can be used by elements (mainly decoders) to avoid having to parse
  * Mpeg video 1/2 packets if it can be done upstream.
  *
- * The various fields are only valid during the lifetime of the #GstH264Meta.
+ * The various fields are only valid during the lifetime of the #GstMpegVideoMeta.
  * If elements wish to use those for longer, they are required to make a copy.
  *
  * Since: 1.2
@@ -68,7 +68,7 @@ struct _GstMpegVideoMeta {
   GstMpegVideoPictureExt         *picext;
   GstMpegVideoQuantMatrixExt     *quantext;
 
-  guint	num_slices;
+  guint num_slices;
   gsize slice_offset;
 };
 
@@ -77,12 +77,12 @@ struct _GstMpegVideoMeta {
 
 GstMpegVideoMeta *
 gst_buffer_add_mpeg_video_meta (GstBuffer * buffer, 
-				const GstMpegVideoSequenceHdr *seq_hdr,
-				const GstMpegVideoSequenceExt *seq_ext,
-				const GstMpegVideoSequenceDisplayExt *disp_ext,
-				const GstMpegVideoPictureHdr *pic_hdr,
-				const GstMpegVideoPictureExt *pic_ext,
-				const GstMpegVideoQuantMatrixExt *quant_ext);
+                                const GstMpegVideoSequenceHdr *seq_hdr,
+                                const GstMpegVideoSequenceExt *seq_ext,
+                                const GstMpegVideoSequenceDisplayExt *disp_ext,
+                                const GstMpegVideoPictureHdr *pic_hdr,
+                                const GstMpegVideoPictureExt *pic_ext,
+                                const GstMpegVideoQuantMatrixExt *quant_ext);
 
 G_END_DECLS
 

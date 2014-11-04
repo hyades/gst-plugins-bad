@@ -29,6 +29,7 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstbytereader.h>
+#include <gst/base/gstflowcombiner.h>
 #include "mpegtsbase.h"
 #include "mpegtspacketizer.h"
 
@@ -53,9 +54,13 @@ struct _GstTSDemux
 {
   MpegTSBase parent;
 
+  gboolean have_group_id;
+  guint group_id;
+
   /* the following vars must be protected with the OBJECT_LOCK as they can be
    * accessed from the application thread and the streaming thread */
-  guint program_number;		/* Required program number (ignore:-1) */
+  gint requested_program_number; /* Required program number (ignore:-1) */
+  guint program_number;
   gboolean emit_statistics;
 
   /*< private >*/
@@ -65,6 +70,9 @@ struct _GstTSDemux
   GstSegment segment;
   GstEvent *segment_event;
 
+  /* global taglist */
+  GstTagList *global_tags;
+
   /* Set when program change */
   gboolean calculate_update_segment;
   /* update segment is */
@@ -72,6 +80,14 @@ struct _GstTSDemux
 
   /* Full stream duration */
   GstClockTime duration;
+
+  /* Pending seek rate (default 1.0) */
+  gdouble rate;
+
+  GstFlowCombiner *flowcombiner;
+
+  /* Used when seeking for a keyframe to go backward in the stream */
+  guint64 last_seek_offset;
 };
 
 struct _GstTSDemuxClass

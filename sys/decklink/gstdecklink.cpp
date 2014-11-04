@@ -128,11 +128,11 @@ static const GstDecklinkMode modes[] = {
   {bmdModeHD1080p30, 1920, 1080, 30, 1, false, HD},
 
   {bmdModeHD1080i50, 1920, 1080, 25, 1, true, HD},
-  {bmdModeHD1080i5994, 1920, 1080, 30000, 1001, true, HD},
-  {bmdModeHD1080i6000, 1920, 1080, 30, 1, true, HD},
+  {bmdModeHD1080i5994, 1920, 1080, 60000, 1001, true, HD},
+  {bmdModeHD1080i6000, 1920, 1080, 60, 1, true, HD},
 
   {bmdModeHD1080p50, 1920, 1080, 50, 1, false, HD},
-  {bmdModeHD1080p5994, 1920, 1080, 30000, 1001, false, HD},
+  {bmdModeHD1080p5994, 1920, 1080, 60000, 1001, false, HD},
   {bmdModeHD1080p6000, 1920, 1080, 60, 1, false, HD},
 
   {bmdModeHD720p50, 1280, 720, 50, 1, false, HD},
@@ -228,25 +228,27 @@ init_devices (void)
         (void **) &devices[i].input);
     if (ret != S_OK) {
       GST_WARNING ("selected device does not have input interface");
-      return;
     }
 
     ret = decklink->QueryInterface (IID_IDeckLinkOutput,
         (void **) &devices[i].output);
     if (ret != S_OK) {
       GST_WARNING ("selected device does not have output interface");
-      return;
     }
 
     ret = decklink->QueryInterface (IID_IDeckLinkConfiguration,
         (void **) &devices[i].config);
     if (ret != S_OK) {
       GST_WARNING ("selected device does not have config interface");
-      return;
     }
 
     ret = iterator->Next (&decklink);
     i++;
+
+    if (i == 10) {
+      GST_WARNING ("this hardware has more then 10 devices");
+      break;
+    }
   }
 
   n_devices = i;
@@ -288,10 +290,9 @@ plugin_init (GstPlugin * plugin)
 
   gst_element_register (plugin, "decklinksrc", GST_RANK_NONE,
       gst_decklink_src_get_type ());
-#if 0
+
   gst_element_register (plugin, "decklinksink", GST_RANK_NONE,
       gst_decklink_sink_get_type ());
-#endif
 
   return TRUE;
 }

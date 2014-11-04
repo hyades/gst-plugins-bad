@@ -302,9 +302,12 @@ static gchar *
 gst_data_uri_src_get_uri (GstURIHandler * handler)
 {
   GstDataURISrc *src = GST_DATA_URI_SRC (handler);
+  gchar *src_uri = NULL;
 
-  /* FIXME: make thread-safe */
-  return g_strdup (src->uri);
+  GST_OBJECT_LOCK (src);
+  src_uri = g_strdup (src->uri);
+  GST_OBJECT_UNLOCK (src);
+  return src_uri;
 }
 
 static gboolean
@@ -411,6 +414,7 @@ gst_data_uri_src_set_uri (GstURIHandler * handler, const gchar * uri,
 
   GST_OBJECT_LOCK (src);
   gst_buffer_replace (&src->buffer, buffer);
+  gst_buffer_unref (buffer);
   g_free (src->uri);
   src->uri = g_strdup (orig_uri);
   GST_OBJECT_UNLOCK (src);

@@ -1,24 +1,134 @@
 # Serbian translation of gst-plugins
-# Copyright (C) 2004 Free Software Foundation, Inc.
+# Copyright (C) 2014 Free Software Foundation, Inc.
 # This file is distributed under the same license as the gst-plugins-bad package.
 # Danilo Segan <dsegan@gmx.net>, 2004.
-# Мирослав Николић <miroslavnikolic@rocketmail.com>, 2011.
+# Мирослав Николић <miroslavnikolic@rocketmail.com>, 2011—2014.
 msgid ""
 msgstr ""
-"Project-Id-Version: gst-plugins-bad-0.10.21.2\n"
+"Project-Id-Version: gst-plugins-bad-1.4.1\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2012-06-07 16:21+0200\n"
-"PO-Revision-Date: 2011-12-04 09:59+0200\n"
+"POT-Creation-Date: 2014-09-24 11:38+0300\n"
+"PO-Revision-Date: 2014-09-13 10:39+0200\n"
 "Last-Translator: Мирослав Николић <miroslavnikolic@rocketmail.com>\n"
-"Language-Team: Serbian <gnu@prevod.org>\n"
+"Language-Team: Serbian <(nothing)>\n"
 "Language: sr\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
 "%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
-"X-Generator: Virtaal 0.7.0\n"
-"X-Project-Style: gnome\n"
+
+msgid "Internal data stream error."
+msgstr "Унутрашња грешка тока података."
+
+msgid "format wasn't negotiated before get function"
+msgstr "запис није договорен пре функције добављања (get)"
+
+msgid "default GStreamer sound events audiosink"
+msgstr "основни аудио усклађивач звучних догађаја Гстримера"
+
+msgid ""
+"GStreamer can play audio using any number of output elements. Some possible "
+"choices are osssink, pulsesink and alsasink. The audiosink can be a partial "
+"pipeline instea of just one element."
+msgstr ""
+"Гстример може да пушта аудио користећи било који број излазних елемената. "
+"Неки могући избори су „osssink“, „pulsesink“ и „alsasink“. Аудио усклађивач "
+"може бити делимична спојка уместо само једног елемента."
+
+msgid "description for default GStreamer sound events audiosink"
+msgstr "опис основног аудио усклађивача звучних догађаја Гстримера"
+
+msgid "Describes the selected audiosink element."
+msgstr "Описује изабрани елемент аудио усклађивача."
+
+msgid "default GStreamer audiosink for Audio/Video Conferencing"
+msgstr "основни аудио усклађивач Гстримера за аудио/видео састанчење"
+
+msgid ""
+"description for default GStreamer audiosink for Audio/Video Conferencing"
+msgstr "опис основног аудио усклађивач Гстримера за аудио/видео састанчење"
+
+msgid "default GStreamer audiosink for Music and Movies"
+msgstr "основни аудио усклађивач Гстримера за музику и филмове"
+
+msgid "description for default GStreamer audiosink for Music and Movies"
+msgstr "опис основног аудио усклађивача Гстримера за музику и филмове"
+
+msgid "default GStreamer videosink"
+msgstr "основни видео усклађивач Гстримера"
+
+msgid ""
+"GStreamer can play video using any number of output elements. Some possible "
+"choices are xvimagesink, ximagesink, sdlvideosink and aasink. The videosink "
+"can be a partial pipeline instead of just one element."
+msgstr ""
+"Гстример може да пушта видео користећи било који број излазних елемената. "
+"Неки могући избори су „xvimagesink“, „ximagesink“, „sdlvideosink“ и "
+"„aasink“. Видео усклађивач може бити делимична спојка уместо само једног "
+"елемента."
+
+msgid "description for default GStreamer videosink"
+msgstr "опис основног видео усклађивача Гстримера"
+
+msgid "Describes the selected videosink element."
+msgstr "Описује изабрани елемент видео усклађивача."
+
+msgid "default GStreamer audiosrc"
+msgstr "основни аудио извор Гстримера"
+
+msgid ""
+"GStreamer can record audio using any number of input elements. Some possible "
+"choices are osssrc, pulsesrc and alsasrc. The audio source can be a partial "
+"pipeline instead of just one element."
+msgstr ""
+"Гстример може да снима аудио користећи било који број излазних елемената. "
+"Неки могући избори су „osssrc“, „pulsesrc“ и „alsasrc“. Извор звука може "
+"бити делимична спојка уместо само једног елемента."
+
+msgid "description for default GStreamer audiosrc"
+msgstr "опис основног аудио извора Гстримера"
+
+msgid "Describes the selected audiosrc element."
+msgstr "Описује изабрани елемент аудио извора."
+
+msgid "default GStreamer videosrc"
+msgstr "основни видео извор Гстримера"
+
+msgid ""
+"GStreamer can record video from any number of input elements. Some possible "
+"choices are v4lsrc, v4l2src and videotestsrc. The video source can be a "
+"partial pipeline instead of just one element."
+msgstr ""
+"Гстример може да снима видео користећи било који број излазних елемената. "
+"Неки могући избори су „v4lsrc“, „v4l2src“ и “videotestsrc“. Извор видеа може "
+"бити делимична спојка уместо само једног елемента."
+
+msgid "description for default GStreamer videosrc"
+msgstr "опис основног видео извора Гстримера"
+
+msgid "Describes the selected videosrc element."
+msgstr "Описује изабрани елемент видео извора."
+
+msgid "default GStreamer visualization"
+msgstr "основно приказивање Гстримера"
+
+msgid ""
+"GStreamer can put visualization plugins in a pipeline to transform audio "
+"streams in video frames. Some possible choices are goom, goom2k1 and "
+"synaesthesia. The visualization plugin can be a partial pipeline instead of "
+"just one element."
+msgstr ""
+"Гстример може да стави прикључке приказивања у спојку да претвори аудио "
+"токове у видео кадрове. Неки могући избори су „goom“, „goom2k1“ и "
+"„synaesthesia“. Прикључак приказивања може бити делимична спојка уместо само "
+"једног елемента."
+
+msgid "description for default GStreamer visualization"
+msgstr "опис основног приказивања Гстримера"
+
+msgid "Describes the selected visualization element."
+msgstr "Описује изабрани елемент приказивања."
 
 msgid "Could not read title information for DVD."
 msgstr "Не могу да прочитам информације о наслову ДВД-а."
@@ -40,22 +150,62 @@ msgstr ""
 msgid "Could not read DVD."
 msgstr "Не могу да читам ДВД."
 
+msgid "This file contains no playable streams."
+msgstr "Ова датотека не садржи токове за пуштање."
+
+msgid "Couldn't get the Manifest's URI"
+msgstr "Не могу да добавим путању Манифеста"
+
+msgid "Failed to get fragment URL."
+msgstr "Нисам успео да добијем адресу одломка."
+
+msgid "Couldn't download fragments"
+msgstr "Не могу да преузмем одломке"
+
+msgid "Could not open sndfile stream for reading."
+msgstr "Не могу да отворим ток датотеке звука за читање."
+
+msgid "Could not establish connection to sndio"
+msgstr "Не могу да успоставим везу са улазом/излазом звука"
+
+msgid "Failed to query sndio capabilities"
+msgstr "Нисам успео да испитам могућности улаза/излаза звука"
+
+msgid "Could not configure sndio"
+msgstr "Не могу да подесим улаз/излаз звука"
+
+msgid "Could not start sndio"
+msgstr "Не могу да покренем улаз/излаз звука"
+
+msgid "Internal data flow error."
+msgstr "Унутрашња грешка протока података."
+
+msgid "Generated file has a larger preroll time than its streams duration"
+msgstr "Створена датотека има дуже време припреме од трајања њеног тока"
+
+#, c-format
+msgid "Missing element '%s' - check your GStreamer installation."
+msgstr "Недостаје елемент „%s“ — проверите вашу инсталацију Гстримера."
+
+msgid "File location is set to NULL, please set it to a valid filename"
+msgstr ""
+"Место датотеке је подешено на НИШТА, подесите га на исправан назив датотеке"
+
+msgid "Subpicture format was not configured before data flow"
+msgstr "Запис подслике није подешен пре протока података"
+
 msgid "No file name specified for writing."
 msgstr "Није наведен назив датотеке за упис."
 
 #, c-format
-msgid "Could not open file \"%s\" for writing."
-msgstr "Не могу да отворим датотеку „%s“ за упис."
-
-msgid "Internal data stream error."
-msgstr "Унутрашња грешка тока података."
+msgid "Given file name \"%s\" can't be converted to local file name encoding."
+msgstr ""
+"Дати назив датотеке „%s“ не може бити претворен у кодирање назива месне "
+"датотеке."
 
 #, c-format
-msgid "Could not write to file \"%s\"."
-msgstr "Не могу да пишем у датотеку „%s“."
-
-msgid "Internal data flow error."
-msgstr "Унутрашња грешка протока података."
+msgid "Could not open file \"%s\" for writing."
+msgstr "Не могу да отворим датотеку „%s“ за упис."
 
 #, c-format
 msgid "Device \"%s\" does not exist."
@@ -70,166 +220,26 @@ msgid "Could not get settings from frontend device \"%s\"."
 msgstr "Не могу да добавим подешавања са управљачког уређаја „%s“."
 
 #, c-format
+msgid "Cannot enumerate delivery systems from frontend device \"%s\"."
+msgstr "Не могу да нумеришем системе доставе са управљачког уређаја „%s“."
+
+#, c-format
 msgid "Could not open file \"%s\" for reading."
 msgstr "Не могу да отворим датотеку „%s“ за читање."
 
-#~ msgid "Could not open device \"%s\" for reading and writing."
-#~ msgstr "Не могу да отворим уређај „%s“ ради читања и уписа."
+msgid "Couldn't find DVB channel configuration file"
+msgstr "Не могу да пронађем датотеку подешавања ДВБ канала"
 
-#~ msgid "Device \"%s\" is not a capture device."
-#~ msgstr "Уређај „%s“ не представља уређај за снимање."
+#, c-format
+msgid "Couldn't load DVB channel configuration file: %s"
+msgstr "Не могу да учитам датотеку подешавања ДВБ канала: %s"
 
-#~ msgid "Could not write to device \"%s\"."
-#~ msgstr "Не могу да пишем на видео уређај „%s“."
+msgid "DVB channel configuration file doesn't contain any channels"
+msgstr "Датотека подешавања ДВБ канала не садржи ниједан канал"
 
-#~ msgid "Could not get buffers from device \"%s\"."
-#~ msgstr "Не могу да примим бафере са уређаја „%s“."
+#, c-format
+msgid "Couldn't find details for DVB channel %s"
+msgstr "Не могу да пронађем податке за ДВБ канал „%s“"
 
-#~ msgid "Could not open audio device \"%s\" for writing."
-#~ msgstr "Не могу да отворим звучни уређај „%s“ ради уписа."
-
-#~ msgid "Could not open control device \"%s\" for writing."
-#~ msgstr "Не могу да отворим управљачки уређај „%s“ ради уписа."
-
-#~ msgid "Could not configure audio device \"%s\"."
-#~ msgstr "Не могу да подесим звучни уређај „%s“."
-
-#~ msgid "Could not set audio device \"%s\" to %d Hz."
-#~ msgstr "Не могу да поставим звучни уређај „%s“ на %d Hz."
-
-#~ msgid "Could not close audio device \"%s\"."
-#~ msgstr "Не могу да отворим радио уређај '%s'"
-
-#~ msgid "Could not open video device \"%s\" for writing."
-#~ msgstr "Не могу да отворим видео уређај „%s“ ради уписа."
-
-#~ msgid "Could not close video device \"%s\"."
-#~ msgstr "Не могу да затворим видео уређај „%s“."
-
-#~ msgid "Error closing file \"%s\"."
-#~ msgstr "Грешка при затварању датотеке „%s“."
-
-#~ msgid "No or invalid input audio, AVI stream will be corrupt."
-#~ msgstr "Улазног звука нема или је неисправан, АВИ ток ће бити искварен."
-
-#~ msgid "OSS device \"%s\" is already in use by another program."
-#~ msgstr "OSS уређај „%s“ већ користи неки програм."
-
-#~ msgid "Could not access device \"%s\", check its permissions."
-#~ msgstr "Не могу да приступим уређају „%s“, проверите његова овлашћења."
-
-#~ msgid "Could not open device \"%s\" for writing."
-#~ msgstr "Не могу да отворим уређај „%s“ ради уписа."
-
-#~ msgid "Could not open device \"%s\" for reading."
-#~ msgstr "Не могу да отворим уређај „%s“ ради читања."
-
-#~ msgid "Volume"
-#~ msgstr "Јачина звука"
-
-#~ msgid "Bass"
-#~ msgstr "Бас"
-
-#~ msgid "Treble"
-#~ msgstr "Шум"
-
-#~ msgid "Synth"
-#~ msgstr "Синт."
-
-#~ msgid "PCM"
-#~ msgstr "ПЦМ"
-
-#~ msgid "Speaker"
-#~ msgstr "Звучник"
-
-#~ msgid "Line-in"
-#~ msgstr "Ул.лин."
-
-#~ msgid "Microphone"
-#~ msgstr "Микрофон"
-
-#~ msgid "CD"
-#~ msgstr "ЦД"
-
-#~ msgid "Mixer"
-#~ msgstr "Миксер"
-
-#~ msgid "PCM-2"
-#~ msgstr "ПЦМ-2"
-
-#~ msgid "Record"
-#~ msgstr "Снимање"
-
-#~ msgid "In-gain"
-#~ msgstr "Ул. пој."
-
-#~ msgid "Out-gain"
-#~ msgstr "Из. пој."
-
-#~ msgid "Line-1"
-#~ msgstr "Лин. 1"
-
-#~ msgid "Line-2"
-#~ msgstr "Лин. 2"
-
-#~ msgid "Line-3"
-#~ msgstr "Лин. 3"
-
-#~ msgid "Digital-1"
-#~ msgstr "Диг. 1"
-
-#~ msgid "Digital-2"
-#~ msgstr "Диг. 2"
-
-#~ msgid "Digital-3"
-#~ msgstr "Диг. 3"
-
-#~ msgid "Phone-in"
-#~ msgstr "Тел. ул."
-
-#~ msgid "Phone-out"
-#~ msgstr "Тел. из."
-
-#~ msgid "Video"
-#~ msgstr "Видео"
-
-#~ msgid "Radio"
-#~ msgstr "Радио"
-
-#~ msgid "Monitor"
-#~ msgstr "Праћење"
-
-#, fuzzy
-#~ msgid "PC Speaker"
-#~ msgstr "Звучник"
-
-#~ msgid "Could not open CD device for reading."
-#~ msgstr "Не могу да отворим ЦД уређај ради читања."
-
-# Виртуелни Систем Датотека
-#~ msgid "Could not open vfs file \"%s\" for reading."
-#~ msgstr "Не могу да отворим ВСД датотеку „%s“ ради читања."
-
-#, fuzzy
-#~ msgid "No filename given."
-#~ msgstr "Име датотеке није задато."
-
-#, fuzzy
-#~ msgid "Could not open vfs file \"%s\" for writing: %s."
-#~ msgstr "Не могу да отворим ВСД датотеку „%s“ ради уписа."
-
-#, fuzzy
-#~ msgid "No filename given"
-#~ msgstr "Име датотеке није задато."
-
-#~ msgid "Could not close vfs file \"%s\"."
-#~ msgstr "Не могу да затворим ВСД датотеку „%s“."
-
-#~ msgid "No device specified."
-#~ msgstr "Уређај није наведен."
-
-#~ msgid "Device is not open."
-#~ msgstr "Уређај није отворен."
-
-#~ msgid "Device is open."
-#~ msgstr "Уређај је отворен."
+#~ msgid "Could not write to file \"%s\"."
+#~ msgstr "Не могу да пишем у датотеку „%s“."

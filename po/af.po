@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: gst-plugins 0.7.6\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2012-06-07 16:21+0200\n"
+"POT-Creation-Date: 2014-09-24 11:38+0300\n"
 "PO-Revision-Date: 2004-03-18 14:16+0200\n"
 "Last-Translator: Petri Jooste <rkwjpj@puk.ac.za>\n"
 "Language-Team: Afrikaans <i18n@af.org.za>\n"
@@ -15,6 +15,101 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+
+msgid "Internal data stream error."
+msgstr ""
+
+msgid "format wasn't negotiated before get function"
+msgstr ""
+
+msgid "default GStreamer sound events audiosink"
+msgstr ""
+
+msgid ""
+"GStreamer can play audio using any number of output elements. Some possible "
+"choices are osssink, pulsesink and alsasink. The audiosink can be a partial "
+"pipeline instea of just one element."
+msgstr ""
+
+msgid "description for default GStreamer sound events audiosink"
+msgstr ""
+
+msgid "Describes the selected audiosink element."
+msgstr ""
+
+msgid "default GStreamer audiosink for Audio/Video Conferencing"
+msgstr ""
+
+msgid ""
+"description for default GStreamer audiosink for Audio/Video Conferencing"
+msgstr ""
+
+msgid "default GStreamer audiosink for Music and Movies"
+msgstr ""
+
+msgid "description for default GStreamer audiosink for Music and Movies"
+msgstr ""
+
+msgid "default GStreamer videosink"
+msgstr ""
+
+msgid ""
+"GStreamer can play video using any number of output elements. Some possible "
+"choices are xvimagesink, ximagesink, sdlvideosink and aasink. The videosink "
+"can be a partial pipeline instead of just one element."
+msgstr ""
+
+msgid "description for default GStreamer videosink"
+msgstr ""
+
+msgid "Describes the selected videosink element."
+msgstr ""
+
+msgid "default GStreamer audiosrc"
+msgstr ""
+
+msgid ""
+"GStreamer can record audio using any number of input elements. Some possible "
+"choices are osssrc, pulsesrc and alsasrc. The audio source can be a partial "
+"pipeline instead of just one element."
+msgstr ""
+
+msgid "description for default GStreamer audiosrc"
+msgstr ""
+
+msgid "Describes the selected audiosrc element."
+msgstr ""
+
+msgid "default GStreamer videosrc"
+msgstr ""
+
+msgid ""
+"GStreamer can record video from any number of input elements. Some possible "
+"choices are v4lsrc, v4l2src and videotestsrc. The video source can be a "
+"partial pipeline instead of just one element."
+msgstr ""
+
+msgid "description for default GStreamer videosrc"
+msgstr ""
+
+msgid "Describes the selected videosrc element."
+msgstr ""
+
+msgid "default GStreamer visualization"
+msgstr ""
+
+msgid ""
+"GStreamer can put visualization plugins in a pipeline to transform audio "
+"streams in video frames. Some possible choices are goom, goom2k1 and "
+"synaesthesia. The visualization plugin can be a partial pipeline instead of "
+"just one element."
+msgstr ""
+
+msgid "description for default GStreamer visualization"
+msgstr ""
+
+msgid "Describes the selected visualization element."
+msgstr ""
 
 #, fuzzy
 msgid "Could not read title information for DVD."
@@ -36,23 +131,63 @@ msgstr ""
 msgid "Could not read DVD."
 msgstr "Kon nie skryf na lêer \"%s\" nie."
 
+msgid "This file contains no playable streams."
+msgstr ""
+
+msgid "Couldn't get the Manifest's URI"
+msgstr ""
+
+msgid "Failed to get fragment URL."
+msgstr ""
+
+msgid "Couldn't download fragments"
+msgstr ""
+
+#, fuzzy
+msgid "Could not open sndfile stream for reading."
+msgstr "Kon nie lêer \"%s\" oopmaak om te lees nie."
+
+msgid "Could not establish connection to sndio"
+msgstr ""
+
+msgid "Failed to query sndio capabilities"
+msgstr ""
+
+#, fuzzy
+msgid "Could not configure sndio"
+msgstr "Kon nie oudio-toestel \"%s\" konfigureer nie."
+
+#, fuzzy
+msgid "Could not start sndio"
+msgstr "Kon nie skryf na lêer \"%s\" nie."
+
+msgid "Internal data flow error."
+msgstr ""
+
+msgid "Generated file has a larger preroll time than its streams duration"
+msgstr ""
+
+#, c-format
+msgid "Missing element '%s' - check your GStreamer installation."
+msgstr ""
+
+msgid "File location is set to NULL, please set it to a valid filename"
+msgstr ""
+
+msgid "Subpicture format was not configured before data flow"
+msgstr ""
+
 #, fuzzy
 msgid "No file name specified for writing."
 msgstr "Geen lêernaam gespesifiseer."
 
 #, c-format
-msgid "Could not open file \"%s\" for writing."
-msgstr "Kon nie lêer \"%s\" oopmaak om in te skryf nie."
-
-msgid "Internal data stream error."
+msgid "Given file name \"%s\" can't be converted to local file name encoding."
 msgstr ""
 
 #, c-format
-msgid "Could not write to file \"%s\"."
-msgstr "Kon nie skryf na lêer \"%s\" nie."
-
-msgid "Internal data flow error."
-msgstr ""
+msgid "Could not open file \"%s\" for writing."
+msgstr "Kon nie lêer \"%s\" oopmaak om in te skryf nie."
 
 #, c-format
 msgid "Device \"%s\" does not exist."
@@ -66,9 +201,30 @@ msgstr "Kon nie beheertoestel \"%s\" toemaak nie."
 msgid "Could not get settings from frontend device \"%s\"."
 msgstr "Kon nie genoeg buffers vanaf toestel \"%s\" kry nie."
 
+#, fuzzy, c-format
+msgid "Cannot enumerate delivery systems from frontend device \"%s\"."
+msgstr "Kon nie genoeg buffers vanaf toestel \"%s\" kry nie."
+
 #, c-format
 msgid "Could not open file \"%s\" for reading."
 msgstr "Kon nie lêer \"%s\" oopmaak om te lees nie."
+
+msgid "Couldn't find DVB channel configuration file"
+msgstr ""
+
+#, c-format
+msgid "Couldn't load DVB channel configuration file: %s"
+msgstr ""
+
+msgid "DVB channel configuration file doesn't contain any channels"
+msgstr ""
+
+#, c-format
+msgid "Couldn't find details for DVB channel %s"
+msgstr ""
+
+#~ msgid "Could not write to file \"%s\"."
+#~ msgstr "Kon nie skryf na lêer \"%s\" nie."
 
 #~ msgid "Could not open device \"%s\" for reading and writing."
 #~ msgstr "Kon nie toestel \"%s\" oopmaak vir lees en skryf nie."
@@ -84,9 +240,6 @@ msgstr "Kon nie lêer \"%s\" oopmaak om te lees nie."
 
 #~ msgid "Could not open control device \"%s\" for writing."
 #~ msgstr "Kon nie beheertoestel \"%s\" oopmaak vir skryf nie."
-
-#~ msgid "Could not configure audio device \"%s\"."
-#~ msgstr "Kon nie oudio-toestel \"%s\" konfigureer nie."
 
 #~ msgid "Could not set audio device \"%s\" to %d Hz."
 #~ msgstr "Kon nie klanktoestel \"%s\" verstel na %d Hz nie."

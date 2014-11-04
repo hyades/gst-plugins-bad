@@ -63,8 +63,6 @@ EXAMPLE_CFILES = \
 
 EXTRA_HFILES = \
 	$(top_srcdir)/ext/assrender/gstassrender.h \
-	$(top_srcdir)/ext/celt/gstceltdec.h \
-	$(top_srcdir)/ext/celt/gstceltenc.h \
 	$(top_srcdir)/ext/curl/gstcurlbasesink.h \
 	$(top_srcdir)/ext/curl/gstcurlfilesink.h \
 	$(top_srcdir)/ext/curl/gstcurlftpsink.h \
@@ -74,7 +72,6 @@ EXTRA_HFILES = \
 	$(top_srcdir)/ext/dc1394/gstdc1394.h \
 	$(top_srcdir)/ext/directfb/dfbvideosink.h \
 	$(top_srcdir)/ext/dts/gstdtsdec.h \
-	$(top_srcdir)/ext/eglgles/gsteglglessink.h \
 	$(top_srcdir)/ext/faac/gstfaac.h \
 	$(top_srcdir)/ext/faad/gstfaad.h \
 	$(top_srcdir)/ext/kate/gstkateenc.h \
@@ -83,7 +80,6 @@ EXTRA_HFILES = \
 	$(top_srcdir)/ext/kate/gstkatetag.h \
 	$(top_srcdir)/ext/kate/gstkatetiger.h \
 	$(top_srcdir)/ext/ladspa/gstladspa.h \
-	$(top_srcdir)/ext/musicbrainz/gsttrm.h \
 	$(top_srcdir)/ext/mimic/gstmimenc.h \
 	$(top_srcdir)/ext/mimic/gstmimdec.h \
 	$(top_srcdir)/ext/modplug/gstmodplug.h \
@@ -102,6 +98,7 @@ EXTRA_HFILES = \
 	$(top_srcdir)/ext/opencv/gstpyramidsegment.h \
 	$(top_srcdir)/ext/opencv/gsttemplatematch.h \
 	$(top_srcdir)/ext/opencv/gsttextoverlay.h \
+	$(top_srcdir)/ext/openni2/gstopenni2src.h \
 	$(top_srcdir)/ext/rsvg/gstrsvgdec.h \
 	$(top_srcdir)/ext/rsvg/gstrsvgoverlay.h \
 	$(top_srcdir)/ext/spandsp/gstspanplc.h \

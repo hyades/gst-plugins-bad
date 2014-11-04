@@ -56,7 +56,7 @@ typedef enum {
 } VC1StreamFormat;
 
 typedef enum {
-  GST_VC1_PARSE_FORMAT_WMV3,
+  GST_VC1_PARSE_FORMAT_WMV3 = 0,
   GST_VC1_PARSE_FORMAT_WVC1
 } GstVC1ParseFormat;
 
@@ -87,6 +87,8 @@ struct _GstVC1Parse
   gboolean renegotiate;
   /* TRUE if the srcpads should be updated */
   gboolean update_caps;
+
+  gboolean sent_codec_tag;
 
   VC1HeaderFormat input_header_format;
   VC1HeaderFormat output_header_format;

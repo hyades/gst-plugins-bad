@@ -81,7 +81,8 @@
 
 #include "gstvc1parse.h"
 
-#include <gst/base/gstbytereader.h>
+#include <gst/base/base.h>
+#include <gst/pbutils/pbutils.h>
 #include <string.h>
 
 GST_DEBUG_CATEGORY (vc1_parse_debug);
@@ -112,6 +113,16 @@ static const struct
   "sequence-layer-frame-layer", VC1_STREAM_FORMAT_SEQUENCE_LAYER_FRAME_LAYER}, {
   "asf", VC1_STREAM_FORMAT_ASF}, {
   "frame-layer", VC1_STREAM_FORMAT_FRAME_LAYER}
+};
+
+static const struct
+{
+  gchar str[5];
+  GstVC1ParseFormat en;
+} parse_formats[] = {
+  {
+  "WMV3", GST_VC1_PARSE_FORMAT_WMV3}, {
+  "WVC1", GST_VC1_PARSE_FORMAT_WVC1}
 };
 
 static const gchar *
@@ -148,6 +159,12 @@ header_format_from_string (const gchar * header_format)
       return header_formats[i].en;
   }
   return -1;
+}
+
+static const gchar *
+parse_format_to_string (GstVC1ParseFormat format)
+{
+  return parse_formats[format].str;
 }
 
 static GstStaticPadTemplate sinktemplate = GST_STATIC_PAD_TEMPLATE ("sink",
@@ -234,6 +251,7 @@ gst_vc1_parse_init (GstVC1Parse * vc1parse)
   gst_base_parse_set_has_timing_info (GST_BASE_PARSE (vc1parse), FALSE);
 
   gst_vc1_parse_reset (vc1parse);
+  GST_PAD_SET_ACCEPT_INTERSECT (GST_BASE_PARSE_SINK_PAD (vc1parse));
 }
 
 static void
@@ -260,6 +278,7 @@ gst_vc1_parse_reset (GstVC1Parse * vc1parse)
 
   vc1parse->renegotiate = TRUE;
   vc1parse->update_caps = TRUE;
+  vc1parse->sent_codec_tag = FALSE;
 
   vc1parse->input_header_format = VC1_HEADER_FORMAT_NONE;
   vc1parse->input_stream_format = VC1_STREAM_FORMAT_BDU;
@@ -297,7 +316,9 @@ gst_vc1_parse_stop (GstBaseParse * parse)
 static gboolean
 gst_vc1_parse_renegotiate (GstVC1Parse * vc1parse)
 {
+  GstCaps *in_caps;
   GstCaps *allowed_caps;
+  GstCaps *tmp;
 
   /* Negotiate with downstream here */
   GST_DEBUG_OBJECT (vc1parse, "Renegotiating");
@@ -311,9 +332,25 @@ gst_vc1_parse_renegotiate (GstVC1Parse * vc1parse)
     GST_DEBUG_OBJECT (vc1parse, "Downstream allowed caps: %" GST_PTR_FORMAT,
         allowed_caps);
 
-    allowed_caps = gst_caps_make_writable (allowed_caps);
-    allowed_caps = gst_caps_truncate (allowed_caps);
-    s = gst_caps_get_structure (allowed_caps, 0);
+    /* Downstream element can have differents caps according to wmv format
+     * so intersect to select the good caps */
+    in_caps = gst_caps_new_simple ("video/x-wmv",
+        "format", G_TYPE_STRING, parse_format_to_string (vc1parse->format),
+        NULL);
+
+    tmp = gst_caps_intersect_full (allowed_caps, in_caps,
+        GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (in_caps);
+
+    if (gst_caps_is_empty (tmp)) {
+      GST_ERROR_OBJECT (vc1parse, "Empty caps, downstream doesn't support %s",
+          parse_format_to_string (vc1parse->format));
+      gst_caps_unref (tmp);
+      return FALSE;
+    }
+
+    tmp = gst_caps_make_writable (tmp);
+    s = gst_caps_get_structure (tmp, 0);
 
     /* If already fixed this does nothing */
     gst_structure_fixate_field_string (s, "header-format", "asf");
@@ -340,8 +377,10 @@ gst_vc1_parse_renegotiate (GstVC1Parse * vc1parse)
       vc1parse->output_stream_format =
           stream_format_from_string (stream_format);
     }
+    gst_caps_unref (tmp);
   } else if (gst_caps_is_empty (allowed_caps)) {
     GST_ERROR_OBJECT (vc1parse, "Empty caps");
+    gst_caps_unref (allowed_caps);
     return FALSE;
   } else {
     GST_DEBUG_OBJECT (vc1parse, "Using input header/stream format");
@@ -363,6 +402,20 @@ gst_vc1_parse_renegotiate (GstVC1Parse * vc1parse)
   return TRUE;
 }
 
+static void
+remove_fields (GstCaps * caps)
+{
+  guint i, n;
+
+  n = gst_caps_get_size (caps);
+  for (i = 0; i < n; i++) {
+    GstStructure *s = gst_caps_get_structure (caps, i);
+
+    gst_structure_remove_field (s, "stream-format");
+    gst_structure_remove_field (s, "header-format");
+  }
+}
+
 static GstCaps *
 gst_vc1_parse_get_sink_caps (GstBaseParse * parse, GstCaps * filter)
 {
@@ -371,22 +424,21 @@ gst_vc1_parse_get_sink_caps (GstBaseParse * parse, GstCaps * filter)
   GstCaps *ret;
 
   templ = gst_pad_get_pad_template_caps (GST_BASE_PARSE_SINK_PAD (parse));
-  peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), NULL);
-  if (peercaps) {
-    guint i, n;
-    GstStructure *s;
+  if (filter) {
+    GstCaps *fcopy = gst_caps_copy (filter);
+    /* Remove the fields we convert */
+    remove_fields (fcopy);
+    peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), fcopy);
+    gst_caps_unref (fcopy);
+  } else
+    peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), NULL);
 
+  if (peercaps) {
     /* Remove the stream-format and header-format fields
      * and add the generic ones again by intersecting
      * with our template */
     peercaps = gst_caps_make_writable (peercaps);
-    n = gst_caps_get_size (peercaps);
-    for (i = 0; i < n; i++) {
-      s = gst_caps_get_structure (peercaps, i);
-
-      gst_structure_remove_field (s, "stream-format");
-      gst_structure_remove_field (s, "header-format");
-    }
+    remove_fields (peercaps);
 
     ret = gst_caps_intersect_full (peercaps, templ, GST_CAPS_INTERSECT_FIRST);
     gst_caps_unref (peercaps);
@@ -440,8 +492,8 @@ gst_vc1_parse_detect (GstBaseParse * parse, GstBuffer * buffer)
 #endif
 
   while (size >= 40) {
-    if (data[3] == 0xc5 && GST_READ_UINT32_BE (data + 4) == 0x00000004 &&
-        GST_READ_UINT32_BE (data + 20) == 0x0000000c) {
+    if (data[3] == 0xc5 && GST_READ_UINT32_LE (data + 4) == 0x00000004 &&
+        GST_READ_UINT32_LE (data + 20) == 0x0000000c) {
       guint32 startcode;
 
       GST_DEBUG_OBJECT (vc1parse, "Found sequence layer");
@@ -502,11 +554,63 @@ detected:
   return GST_FLOW_OK;
 }
 
+static int
+gst_vc1_parse_get_max_framerate (GstVC1Parse * vc1parse)
+{
+  /* http://wiki.multimedia.cx/index.php?title=VC-1#Setup_Data_.2F_Sequence_Layer */
+  switch (vc1parse->profile) {
+    case GST_VC1_PROFILE_SIMPLE:
+      switch (vc1parse->level) {
+        case GST_VC1_LEVEL_LOW:
+          return 15;
+        case GST_VC1_LEVEL_MEDIUM:
+          return 30;
+        default:
+          g_assert_not_reached ();
+          return 0;
+      }
+      break;
+    case GST_VC1_PROFILE_MAIN:
+      switch (vc1parse->level) {
+        case GST_VC1_LEVEL_LOW:
+          return 24;
+        case GST_VC1_LEVEL_MEDIUM:
+          return 30;
+        case GST_VC1_LEVEL_HIGH:
+          return 30;
+        default:
+          g_assert_not_reached ();
+          return 0;
+      }
+      break;
+    case GST_VC1_PROFILE_ADVANCED:
+      switch (vc1parse->level) {
+        case GST_VC1_LEVEL_L0:
+          return 30;
+        case GST_VC1_LEVEL_L1:
+          return 30;
+        case GST_VC1_LEVEL_L2:
+          return 60;
+        case GST_VC1_LEVEL_L3:
+          return 60;
+        case GST_VC1_LEVEL_L4:
+          return 60;
+        default:
+          g_assert_not_reached ();
+          return 0;
+      }
+      break;
+    default:
+      g_assert_not_reached ();
+      return 0;
+  }
+}
+
 static gboolean
 gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
 {
   GstCaps *caps;
-  GstVC1Profile profile;
+  GstVC1Profile profile = -1;
   const gchar *stream_format, *header_format;
 
   if (gst_pad_has_current_caps (GST_BASE_PARSE_SRC_PAD (vc1parse))
@@ -544,7 +648,7 @@ gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
     g_assert_not_reached ();
 
   if (profile == GST_VC1_PROFILE_ADVANCED) {
-    const gchar *level;
+    const gchar *level = NULL;
     /* Caller must make sure this is valid here */
     g_assert (vc1parse->seq_hdr_buffer);
     switch ((GstVC1Level) vc1parse->seq_hdr.advanced.level) {
@@ -584,7 +688,7 @@ gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
         "profile", G_TYPE_STRING, profile_str, NULL);
 
     if (vc1parse->seq_layer_buffer) {
-      const gchar *level;
+      const gchar *level = NULL;
       switch (vc1parse->seq_layer.struct_b.level) {
         case GST_VC1_LEVEL_LOW:
           level = "low";
@@ -625,17 +729,23 @@ gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
           seq_hdr |= (vc1parse->seq_layer.struct_c.frmrtq_postproc << 25);
           seq_hdr |= (vc1parse->seq_layer.struct_c.bitrtq_postproc << 20);
           seq_hdr |= (vc1parse->seq_layer.struct_c.loop_filter << 19);
+          /* Reserved3 shall be set to zero */
           seq_hdr |= (vc1parse->seq_layer.struct_c.multires << 17);
+          /* Reserved4 shall be set to one */
+          seq_hdr |= (1 << 16);
           seq_hdr |= (vc1parse->seq_layer.struct_c.fastuvmc << 15);
           seq_hdr |= (vc1parse->seq_layer.struct_c.extended_mv << 14);
           seq_hdr |= (vc1parse->seq_layer.struct_c.dquant << 12);
           seq_hdr |= (vc1parse->seq_layer.struct_c.vstransform << 11);
+          /* Reserved5 shall be set to zero */
           seq_hdr |= (vc1parse->seq_layer.struct_c.overlap << 9);
           seq_hdr |= (vc1parse->seq_layer.struct_c.syncmarker << 8);
           seq_hdr |= (vc1parse->seq_layer.struct_c.rangered << 7);
           seq_hdr |= (vc1parse->seq_layer.struct_c.maxbframes << 4);
           seq_hdr |= (vc1parse->seq_layer.struct_c.quantizer << 2);
           seq_hdr |= (vc1parse->seq_layer.struct_c.finterpflag << 1);
+          /* Reserved6 shall be set to one */
+          seq_hdr |= 1;
           codec_data = gst_buffer_new_and_alloc (4);
 
           gst_buffer_map (codec_data, &minfo, GST_MAP_WRITE);
@@ -693,11 +803,20 @@ gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
         gst_buffer_map (codec_data, &minfo, GST_MAP_WRITE);
 
         data = minfo.data;
+        /* According to SMPTE 421M Annex L, the sequence layer shall be
+         * represented as a sequence of 32 bit unsigned integers and each
+         * integers should be serialized in little-endian byte-order except for
+         * STRUCT_C which should be serialized in big-endian byte-order. */
+
         /* Unknown number of frames and start code */
         data[0] = 0xff;
         data[1] = 0xff;
         data[2] = 0xff;
         data[3] = 0xc5;
+
+        /* 0x00000004 */
+        GST_WRITE_UINT32_LE (data + 4, 4);
+
         /* structC */
         structC |= (vc1parse->profile << 30);
         if (vc1parse->profile != GST_VC1_PROFILE_ADVANCED) {
@@ -705,45 +824,60 @@ gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
           structC |= (vc1parse->seq_layer.struct_c.frmrtq_postproc << 25);
           structC |= (vc1parse->seq_layer.struct_c.bitrtq_postproc << 20);
           structC |= (vc1parse->seq_layer.struct_c.loop_filter << 19);
+          /* Reserved3 shall be set to zero */
           structC |= (vc1parse->seq_layer.struct_c.multires << 17);
+          /* Reserved4 shall be set to one */
+          structC |= (1 << 16);
           structC |= (vc1parse->seq_layer.struct_c.fastuvmc << 15);
           structC |= (vc1parse->seq_layer.struct_c.extended_mv << 14);
           structC |= (vc1parse->seq_layer.struct_c.dquant << 12);
           structC |= (vc1parse->seq_layer.struct_c.vstransform << 11);
+          /* Reserved5 shall be set to zero */
           structC |= (vc1parse->seq_layer.struct_c.overlap << 9);
           structC |= (vc1parse->seq_layer.struct_c.syncmarker << 8);
           structC |= (vc1parse->seq_layer.struct_c.rangered << 7);
           structC |= (vc1parse->seq_layer.struct_c.maxbframes << 4);
           structC |= (vc1parse->seq_layer.struct_c.quantizer << 2);
           structC |= (vc1parse->seq_layer.struct_c.finterpflag << 1);
+          /* Reserved6 shall be set to one */
+          structC |= 1;
         }
-        GST_WRITE_UINT32_BE (data + 4, structC);
-        /* 0x00000004 */
-        GST_WRITE_UINT32_BE (data + 8, 4);
+        GST_WRITE_UINT32_BE (data + 8, structC);
+
         /* structA */
         if (vc1parse->profile != GST_VC1_PROFILE_ADVANCED) {
-          GST_WRITE_UINT32_BE (data + 12, vc1parse->height);
-          GST_WRITE_UINT32_BE (data + 16, vc1parse->width);
+          GST_WRITE_UINT32_LE (data + 12, vc1parse->height);
+          GST_WRITE_UINT32_LE (data + 16, vc1parse->width);
         } else {
-          GST_WRITE_UINT32_BE (data + 12, 0);
-          GST_WRITE_UINT32_BE (data + 16, 0);
+          GST_WRITE_UINT32_LE (data + 12, 0);
+          GST_WRITE_UINT32_LE (data + 16, 0);
         }
 
         /* 0x0000000c */
-        GST_WRITE_UINT32_BE (data + 20, 0x0000000c);
+        GST_WRITE_UINT32_LE (data + 20, 0x0000000c);
+
         /* structB */
-        if (vc1parse->level != -1)
-          data[24] = (vc1parse->level << 5);
-        else
-          data[24] = 0x40;      /* Use HIGH level */
         /* Unknown HRD_BUFFER */
-        GST_WRITE_UINT24_BE (data + 25, 0);
+        GST_WRITE_UINT24_LE (data + 24, 0);
+        if ((gint) vc1parse->level != -1)
+          data[27] = (vc1parse->level << 5);
+        else
+          data[27] = (0x4 << 5);        /* Use HIGH level */
         /* Unknown HRD_RATE */
-        GST_WRITE_UINT32_BE (data + 28, 0);
+        GST_WRITE_UINT32_LE (data + 28, 0);
         /* Framerate */
-        GST_WRITE_UINT32_BE (data + 32,
-            ((guint32) (((gdouble) vc1parse->fps_n) /
-                    ((gdouble) vc1parse->fps_d) + 0.5)));
+        if (vc1parse->fps_d == 0) {
+          /* If not known, it seems we need to put in the maximum framerate
+             possible for the profile/level used (this is for RTP
+             (https://tools.ietf.org/html/draft-ietf-avt-rtp-vc1-06#section-6.1),
+             so likely elsewhere too */
+          GST_WRITE_UINT32_LE (data + 32,
+              gst_vc1_parse_get_max_framerate (vc1parse));
+        } else {
+          GST_WRITE_UINT32_LE (data + 32,
+              ((guint32) (((gdouble) vc1parse->fps_n) /
+                      ((gdouble) vc1parse->fps_d) + 0.5)));
+        }
         gst_buffer_unmap (codec_data, &minfo);
 
         gst_caps_set_simple (caps, "codec_data", GST_TYPE_BUFFER, codec_data,
@@ -762,6 +896,14 @@ gst_vc1_parse_update_caps (GstVC1Parse * vc1parse)
   gst_caps_unref (caps);
   vc1parse->update_caps = FALSE;
   return TRUE;
+}
+
+static inline void
+calculate_mb_size (GstVC1SeqHdr * seqhdr, guint width, guint height)
+{
+  seqhdr->mb_width = (width + 15) >> 4;
+  seqhdr->mb_height = (height + 15) >> 4;
+  seqhdr->mb_stride = seqhdr->mb_width + 1;
 }
 
 static gboolean
@@ -884,8 +1026,8 @@ gst_vc1_parse_handle_frame (GstBaseParse * parse, GstBaseParseFrame * frame,
           VC1_STREAM_FORMAT_SEQUENCE_LAYER_RAW_FRAME
           || vc1parse->input_stream_format ==
           VC1_STREAM_FORMAT_SEQUENCE_LAYER_FRAME_LAYER)) {
-    if (data[3] == 0xc5 && GST_READ_UINT32_BE (data + 4) == 0x00000004
-        && GST_READ_UINT32_BE (data + 20) == 0x0000000c) {
+    if (data[3] == 0xc5 && GST_READ_UINT32_LE (data + 4) == 0x00000004
+        && GST_READ_UINT32_LE (data + 20) == 0x0000000c) {
       framesize = 36;
     } else {
       *skipsize = 1;
@@ -953,7 +1095,7 @@ gst_vc1_parse_handle_frame (GstBaseParse * parse, GstBaseParseFrame * frame,
     /* frame-layer or sequence-layer-frame-layer */
     g_assert (size >= 8);
     /* Parse frame layer size */
-    framesize = GST_READ_UINT24_BE (data + 1) + 8;
+    framesize = GST_READ_UINT24_LE (data) + 8;
   }
 
 
@@ -1074,6 +1216,34 @@ gst_vc1_parse_handle_frame (GstBaseParse * parse, GstBaseParseFrame * frame,
         /* Must be a frame or a frame + field */
         /* TODO: Check if keyframe */
       }
+    } else {
+      /* In simple/main, we basically have a raw frame, so parse it */
+      GstVC1ParserResult pres;
+      GstVC1FrameHdr frame_hdr;
+      GstVC1SeqHdr seq_hdr;
+
+      if (!vc1parse->seq_hdr_buffer) {
+        /* Build seq_hdr from sequence-layer to be able to parse frame */
+        seq_hdr.profile = vc1parse->profile;
+        seq_hdr.struct_c = vc1parse->seq_layer.struct_c;
+        calculate_mb_size (&seq_hdr, vc1parse->seq_layer.struct_a.horiz_size,
+            vc1parse->seq_layer.struct_a.vert_size);
+      } else {
+        seq_hdr = vc1parse->seq_hdr;
+      }
+
+      pres = gst_vc1_parse_frame_header (data, size, &frame_hdr,
+          &seq_hdr, NULL);
+      if (pres != GST_VC1_PARSER_OK) {
+        GST_ERROR_OBJECT (vc1parse, "Invalid VC1 frame header");
+        ret = GST_FLOW_ERROR;
+        goto done;
+      }
+
+      if (frame_hdr.ptype == GST_VC1_PICTURE_TYPE_I)
+        GST_BUFFER_FLAG_UNSET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
+      else
+        GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT);
     }
     ret = GST_FLOW_OK;
   } else {
@@ -1203,6 +1373,25 @@ static GstFlowReturn
 gst_vc1_parse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
 {
   GstVC1Parse *vc1parse = GST_VC1_PARSE (parse);
+
+  if (!vc1parse->sent_codec_tag) {
+    GstTagList *taglist;
+    GstCaps *caps;
+
+    taglist = gst_tag_list_new_empty ();
+
+    /* codec tag */
+    caps = gst_pad_get_current_caps (GST_BASE_PARSE_SRC_PAD (parse));
+    gst_pb_utils_add_codec_description_to_tag_list (taglist,
+        GST_TAG_VIDEO_CODEC, caps);
+    gst_caps_unref (caps);
+
+    gst_pad_push_event (GST_BASE_PARSE_SRC_PAD (vc1parse),
+        gst_event_new_tag (taglist));
+
+    /* also signals the end of first-frame processing */
+    vc1parse->sent_codec_tag = TRUE;
+  }
 
   if (vc1parse->input_header_format != vc1parse->output_header_format ||
       vc1parse->input_stream_format != vc1parse->output_stream_format) {
@@ -1415,7 +1604,8 @@ gst_vc1_parse_handle_seq_layer (GstVC1Parse * vc1parse,
 
   width = vc1parse->seq_layer.struct_a.vert_size;
   height = vc1parse->seq_layer.struct_a.horiz_size;
-  if (vc1parse->width != width || vc1parse->height != height) {
+  if (width > 0 && height > 0
+      && (vc1parse->width != width || vc1parse->height != height)) {
     vc1parse->update_caps = TRUE;
     vc1parse->width = width;
     vc1parse->height = height;
@@ -1427,7 +1617,7 @@ gst_vc1_parse_handle_seq_layer (GstVC1Parse * vc1parse,
     vc1parse->level = level;
   }
 
-  if (!vc1parse->fps_from_caps) {
+  if (!vc1parse->fps_from_caps && profile != GST_VC1_PROFILE_ADVANCED) {
     gint fps;
     fps = vc1parse->seq_layer.struct_c.framerate;
     if (fps == 0 || fps == -1)
@@ -1654,9 +1844,7 @@ gst_vc1_parse_set_caps (GstBaseParse * parse, GstCaps * caps)
     gst_buffer_unmap (codec_data, &minfo);
   } else {
     vc1parse->input_header_format = VC1_HEADER_FORMAT_NONE;
-    if (header_format && strcmp (header_format, "sequence-layer") != 0)
-      vc1parse->input_header_format = VC1_HEADER_FORMAT_SEQUENCE_LAYER;
-    else if (header_format && strcmp (header_format, "none") != 0)
+    if (header_format && strcmp (header_format, "none") != 0)
       GST_WARNING_OBJECT (vc1parse,
           "Upstream claimed '%s' header format but 'none' detected",
           header_format);

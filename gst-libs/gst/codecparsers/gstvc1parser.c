@@ -35,6 +35,7 @@
 #include "gstvc1parser.h"
 #include "parserutils.h"
 #include <gst/base/gstbytereader.h>
+#include <gst/base/gstbytewriter.h>
 #include <gst/base/gstbitreader.h>
 #include <string.h>
 
@@ -1674,8 +1675,7 @@ gst_vc1_identify_next_bdu (const guint8 * data, gsize size, GstVC1BDU * bdu)
   g_return_val_if_fail (bdu != NULL, GST_VC1_PARSER_ERROR);
 
   if (size < 4) {
-    GST_DEBUG ("Can't parse, buffer has too small size %" G_GSIZE_FORMAT,
-        size);
+    GST_DEBUG ("Can't parse, buffer has too small size %" G_GSIZE_FORMAT, size);
     return GST_VC1_PARSER_ERROR;
   }
 
@@ -1718,7 +1718,7 @@ gst_vc1_identify_next_bdu (const guint8 * data, gsize size, GstVC1BDU * bdu)
  * gst_vc1_parse_sequence_layer:
  * @data: The data to parse
  * @size: the size of @data
- * @structa: The #GstVC1SeqLayer to set.
+ * @seqlayer: The #GstVC1SeqLayer to set.
  *
  * Parses @data, and fills @seqlayer fields.
  *
@@ -1729,32 +1729,78 @@ gst_vc1_parse_sequence_layer (const guint8 * data, gsize size,
     GstVC1SeqLayer * seqlayer)
 {
   guint32 tmp;
-  GstBitReader br = GST_BIT_READER_INIT (data, size);
+  guint8 tmp8;
+  guint8 structA[8] = { 0, };
+  guint8 structB[12] = { 0, };
+  GstBitReader br;
+  GstByteReader byter = GST_BYTE_READER_INIT (data, size);
+  GstByteWriter bytew;
 
   g_return_val_if_fail (seqlayer != NULL, GST_VC1_PARSER_ERROR);
 
-  READ_UINT32 (&br, tmp, 8);
-  if (tmp != 0xC5)
+  /* Thanks to the specification, structA and structB fields are defined
+   * as unisgned integer msb first.
+   * But in sequence-layer there are serialized in little-endian byte order,
+   * so we must take care of their endianness before using bit reader */
+
+  if (!gst_byte_reader_get_uint24_le (&byter, &seqlayer->numframes))
     goto failed;
 
-  READ_UINT32 (&br, seqlayer->numframes, 24);
+  if (!gst_byte_reader_get_uint8 (&byter, &tmp8))
+    goto failed;
 
-  READ_UINT32 (&br, tmp, 32);
+  if (tmp8 != 0xC5)
+    goto failed;
+
+  /* 0x00000004 */
+  if (!gst_byte_reader_get_uint32_le (&byter, &tmp))
+    goto failed;
+
   if (tmp != 0x04)
     goto failed;
 
+  /* As an exception, structC is serialized in big-endian byte order so
+   * no endianness issue here but we should at least have 4 bytes */
+  if (gst_byte_reader_get_remaining (&byter) < 4)
+    goto failed;
+
+  gst_bit_reader_init (&br, data + gst_byte_reader_get_pos (&byter), 4);
   if (parse_sequence_header_struct_c (&br, &seqlayer->struct_c) ==
       GST_VC1_PARSER_ERROR)
     goto failed;
 
+  gst_byte_reader_skip (&byter, 4);
+
+  /* structA */
+  gst_byte_writer_init_with_data (&bytew, structA, 8, TRUE);
+  gst_byte_reader_get_uint32_le (&byter, &tmp);
+  gst_byte_writer_put_uint32_be (&bytew, tmp);
+  gst_byte_reader_get_uint32_le (&byter, &tmp);
+  gst_byte_writer_put_uint32_be (&bytew, tmp);
+
+  gst_bit_reader_init (&br, structA, 8);
   if (parse_sequence_header_struct_a (&br, &seqlayer->struct_a) ==
       GST_VC1_PARSER_ERROR)
     goto failed;
 
-  READ_UINT32 (&br, tmp, 32);
+  /* 0x0000000C */
+  if (!gst_byte_reader_get_uint32_le (&byter, &tmp))
+    goto failed;
+
   if (tmp != 0x0C)
     goto failed;
 
+  /* structB */
+  gst_byte_writer_reset (&bytew);
+  gst_byte_writer_init_with_data (&bytew, structB, 12, TRUE);
+  gst_byte_reader_get_uint32_le (&byter, &tmp);
+  gst_byte_writer_put_uint32_be (&bytew, tmp);
+  gst_byte_reader_get_uint32_le (&byter, &tmp);
+  gst_byte_writer_put_uint32_be (&bytew, tmp);
+  gst_byte_reader_get_uint32_le (&byter, &tmp);
+  gst_byte_writer_put_uint32_be (&bytew, tmp);
+
+  gst_bit_reader_init (&br, structB, 12);
   if (parse_sequence_header_struct_b (&br, &seqlayer->struct_b) ==
       GST_VC1_PARSER_ERROR)
     goto failed;
@@ -1792,7 +1838,7 @@ gst_vc1_parse_sequence_header_struct_a (const guint8 * data,
  * gst_vc1_parse_sequence_header_struct_b:
  * @data: The data to parse
  * @size: the size of @data
- * @structa: The #GstVC1SeqStructB to set.
+ * @structb: The #GstVC1SeqStructB to set.
  *
  * Parses @data, and fills @structb fields.
  *
@@ -2098,7 +2144,6 @@ failed:
 
 /**
  * gst_vc1_bitplanes_new:
- * @seqhdr: The #GstVC1SeqHdr from which to set @bitplanes
  *
  * Creates a new #GstVC1BitPlanes. It should be freed with
  * gst_vc1_bitplanes_free() after use.

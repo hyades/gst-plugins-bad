@@ -41,13 +41,6 @@ static const guint8 opus_ogg_id_header[19] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-static const guint8 opus_ogg_comments_header[] = {
-  0x4f, 0x70, 0x75, 0x73, 0x54, 0x61, 0x67, 0x73, 0x1e, 0x00, 0x00, 0x00, 0x45,
-  0x6e, 0x63, 0x6f, 0x64, 0x65, 0x64, 0x20, 0x77, 0x69, 0x74, 0x68, 0x20, 0x47,
-  0x53, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x65, 0x72, 0x20, 0x4f, 0x70, 0x75, 0x73,
-  0x65, 0x6e, 0x63, 0x00, 0x00, 0x00, 0x00
-};
-
 /* A lot of these taken from the vorbisdec test */
 
 /* For ease of programming we use globals to keep refs for our floating
@@ -147,11 +140,16 @@ GST_START_TEST (test_opus_id_header)
 {
   GstElement *opusdec;
   GstBuffer *inbuffer;
+  GstCaps *caps;
 
   opusdec = setup_opusdec ();
   fail_unless (gst_element_set_state (opusdec,
           GST_STATE_PLAYING) == GST_STATE_CHANGE_SUCCESS,
       "could not set to playing");
+
+  caps = gst_caps_new_empty_simple ("audio/x-opus");
+  gst_check_setup_events (mydecsrcpad, opusdec, caps, GST_FORMAT_TIME);
+  gst_caps_unref (caps);
 
   inbuffer = gst_buffer_new_and_alloc (sizeof (opus_ogg_id_header));
   gst_buffer_fill (inbuffer, 0, opus_ogg_id_header,
@@ -236,7 +234,7 @@ GST_START_TEST (test_opus_encode_samples)
 
   caps = gst_caps_from_string (AUDIO_CAPS_STRING);
   fail_unless (caps != NULL);
-  gst_pad_set_caps (myencsrcpad, caps);
+  gst_check_setup_events (myencsrcpad, opusenc, caps, GST_FORMAT_TIME);
   gst_caps_unref (caps);
   gst_buffer_ref (inbuffer);
 
@@ -307,9 +305,14 @@ GST_START_TEST (test_opus_encode_properties)
   caps = gst_caps_from_string (AUDIO_CAPS_STRING);
   fail_unless (caps != NULL);
 
-  gst_pad_set_caps (myencsrcpad, caps);
+  gst_check_setup_events (myencsrcpad, opusenc, caps, GST_FORMAT_TIME);
 
   for (step = 0; step < steps; ++step) {
+    GstSegment segment;
+
+    gst_segment_init (&segment, GST_FORMAT_TIME);
+    gst_pad_push_event (myencsrcpad, gst_event_new_segment (&segment));
+
     inbuffer = gst_buffer_new_and_alloc (nsamples * 2);
     gst_buffer_memset (inbuffer, 0, 0, nsamples * 2);
 

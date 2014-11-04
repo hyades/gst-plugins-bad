@@ -85,7 +85,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("audio/x-raw, "
-        "format = (string) " GST_AUDIO_NE (s16) ", "
+        "format = (string) " GST_AUDIO_NE (S16) ", "
         "layout = (string) interleaved, "
         "rate = (int) 48000, " "channels = (int) [1, 8]")
     );
@@ -189,7 +189,7 @@ gst_flite_test_src_fixate (GstBaseSrc * bsrc, GstCaps * caps)
     gst_structure_remove_field (structure, "channel-mask");
   } else {
     guint64 channel_mask = 0;
-    gint x = 64;
+    gint x = 63;
 
     if (!gst_structure_get (structure, "channel-mask", GST_TYPE_BITMASK,
             &channel_mask, NULL)) {

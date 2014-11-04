@@ -92,6 +92,7 @@ struct _GstJpegParsePrivate
 
   /* a new segment arrived */
   gboolean new_segment;
+  GstSegment segment;
 
   /* the parsed frame size */
   guint16 width, height;
@@ -859,6 +860,8 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
           ("Can't set caps to the src pad"), ("Can't set caps to the src pad"));
       return GST_FLOW_ERROR;
     }
+    gst_pad_push_event (parse->priv->srcpad,
+        gst_event_new_segment (&parse->priv->segment));
 
     if (parse->priv->tags) {
       GST_DEBUG_OBJECT (parse, "Pushing tags: %" GST_PTR_FORMAT,
@@ -941,8 +944,6 @@ gst_jpeg_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   GstJpegParse *parse = GST_JPEG_PARSE (parent);
   gboolean res = TRUE;
 
-  parse = GST_JPEG_PARSE (gst_pad_get_parent (pad));
-
   GST_DEBUG_OBJECT (parse, "event : %s", GST_EVENT_TYPE_NAME (event));
 
   switch (GST_EVENT_TYPE (event)) {
@@ -975,7 +976,8 @@ gst_jpeg_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* Discard any data in the adapter.  There should have been an EOS before
        * to flush it. */
       gst_adapter_clear (parse->priv->adapter);
-      res = gst_pad_push_event (parse->priv->srcpad, event);
+      gst_event_copy_segment (event, &parse->priv->segment);
+      gst_event_unref (event);
       parse->priv->new_segment = TRUE;
       break;
     case GST_EVENT_TAG:{
@@ -998,7 +1000,6 @@ gst_jpeg_parse_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       break;
   }
 
-  gst_object_unref (parse);
   return res;
 }
 
@@ -1024,6 +1025,7 @@ gst_jpeg_parse_change_state (GstElement * element, GstStateChange transition)
       parse->priv->caps_width = parse->priv->caps_height = -1;
 
       parse->priv->new_segment = FALSE;
+      gst_segment_init (&parse->priv->segment, GST_FORMAT_UNDEFINED);
 
       parse->priv->next_ts = GST_CLOCK_TIME_NONE;
       parse->priv->duration = GST_CLOCK_TIME_NONE;

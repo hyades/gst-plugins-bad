@@ -68,17 +68,24 @@ enum
 
 #define VIDEO_FORMATS GST_VIDEO_OVERLAY_COMPOSITION_BLEND_FORMATS
 
+#define DVBSUB_OVERLAY_CAPS GST_VIDEO_CAPS_MAKE(VIDEO_FORMATS)
+
+#define DVBSUB_OVERLAY_ALL_CAPS DVBSUB_OVERLAY_CAPS ";" \
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ALL)
+
+static GstStaticCaps sw_template_caps = GST_STATIC_CAPS (DVBSUB_OVERLAY_CAPS);
+
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (VIDEO_FORMATS))
+    GST_STATIC_CAPS (DVBSUB_OVERLAY_ALL_CAPS)
     );
 
 static GstStaticPadTemplate video_sink_factory =
 GST_STATIC_PAD_TEMPLATE ("video_sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (VIDEO_FORMATS))
+    GST_STATIC_CAPS (DVBSUB_OVERLAY_ALL_CAPS)
     );
 
 static GstStaticPadTemplate text_sink_factory =
@@ -101,7 +108,9 @@ static GstStateChangeReturn gst_dvbsub_overlay_change_state (GstElement *
 #define gst_dvbsub_overlay_parent_class parent_class
 G_DEFINE_TYPE (GstDVBSubOverlay, gst_dvbsub_overlay, GST_TYPE_ELEMENT);
 
-static GstCaps *gst_dvbsub_overlay_getcaps (GstDVBSubOverlay * render,
+static GstCaps *gst_dvbsub_overlay_get_videosink_caps (GstDVBSubOverlay *
+    render, GstPad * pad, GstCaps * filter);
+static GstCaps *gst_dvbsub_overlay_get_src_caps (GstDVBSubOverlay * render,
     GstPad * pad, GstCaps * filter);
 
 static GstFlowReturn gst_dvbsub_overlay_chain_video (GstPad * pad,
@@ -373,7 +382,7 @@ gst_dvbsub_overlay_query_src (GstPad * pad, GstObject * parent,
       GstCaps *filter, *caps;
 
       gst_query_parse_caps (query, &filter);
-      caps = gst_dvbsub_overlay_getcaps (render, pad, filter);
+      caps = gst_dvbsub_overlay_get_src_caps (render, pad, filter);
       gst_query_set_caps_result (query, caps);
       gst_caps_unref (caps);
       ret = TRUE;
@@ -428,77 +437,312 @@ gst_dvbsub_overlay_event_src (GstPad * pad, GstObject * parent,
   return ret;
 }
 
+/**
+ * gst_dvbsub_overlay_add_feature_and_intersect:
+ *
+ * Creates a new #GstCaps containing the (given caps +
+ * given caps feature) + (given caps intersected by the
+ * given filter).
+ *
+ * Returns: the new #GstCaps
+ */
 static GstCaps *
-gst_dvbsub_overlay_getcaps (GstDVBSubOverlay * render, GstPad * pad,
+gst_dvbsub_overlay_add_feature_and_intersect (GstCaps * caps,
+    const gchar * feature, GstCaps * filter)
+{
+  int i, caps_size;
+  GstCaps *new_caps;
+
+  new_caps = gst_caps_copy (caps);
+
+  caps_size = gst_caps_get_size (new_caps);
+  for (i = 0; i < caps_size; i++) {
+    GstCapsFeatures *features = gst_caps_get_features (new_caps, i);
+    if (!gst_caps_features_is_any (features)) {
+      gst_caps_features_add (features, feature);
+    }
+  }
+
+  gst_caps_append (new_caps, gst_caps_intersect_full (caps,
+          filter, GST_CAPS_INTERSECT_FIRST));
+
+  return new_caps;
+}
+
+/**
+ * gst_dvbsub_overlay_intersect_by_feature:
+ *
+ * Creates a new #GstCaps based on the following filtering rule.
+ *
+ * For each individual caps contained in given caps, if the
+ * caps uses the given caps feature, keep a version of the caps
+ * with the feature and an another one without. Otherwise, intersect
+ * the caps with the given filter.
+ *
+ * Returns: the new #GstCaps
+ */
+static GstCaps *
+gst_dvbsub_overlay_intersect_by_feature (GstCaps * caps,
+    const gchar * feature, GstCaps * filter)
+{
+  int i, caps_size;
+  GstCaps *new_caps;
+
+  new_caps = gst_caps_new_empty ();
+
+  caps_size = gst_caps_get_size (caps);
+  for (i = 0; i < caps_size; i++) {
+    GstStructure *caps_structure = gst_caps_get_structure (caps, i);
+    GstCapsFeatures *caps_features =
+        gst_caps_features_copy (gst_caps_get_features (caps, i));
+    GstCaps *filtered_caps;
+    GstCaps *simple_caps =
+        gst_caps_new_full (gst_structure_copy (caps_structure), NULL);
+    gst_caps_set_features (simple_caps, 0, caps_features);
+
+    if (gst_caps_features_contains (caps_features, feature)) {
+      gst_caps_append (new_caps, gst_caps_copy (simple_caps));
+
+      gst_caps_features_remove (caps_features, feature);
+      filtered_caps = gst_caps_ref (simple_caps);
+    } else {
+      filtered_caps = gst_caps_intersect_full (simple_caps, filter,
+          GST_CAPS_INTERSECT_FIRST);
+    }
+
+    gst_caps_unref (simple_caps);
+    gst_caps_append (new_caps, filtered_caps);
+  }
+
+  return new_caps;
+}
+
+static GstCaps *
+gst_dvbsub_overlay_get_videosink_caps (GstDVBSubOverlay * render, GstPad * pad,
     GstCaps * filter)
 {
-  GstPad *otherpad;
-  GstCaps *caps, *templ;
+  GstPad *srcpad = render->srcpad;
+  GstCaps *peer_caps = NULL, *caps = NULL, *dvdsub_overlay_filter = NULL;
 
-  if (pad == render->srcpad)
-    otherpad = render->video_sinkpad;
-  else
-    otherpad = render->srcpad;
+  if (filter) {
+    /* filter caps + composition feature + filter caps
+     * filtered by the software caps. */
+    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+    dvdsub_overlay_filter =
+        gst_dvbsub_overlay_add_feature_and_intersect (filter,
+        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+    gst_caps_unref (sw_caps);
 
-  templ = gst_pad_get_pad_template_caps (otherpad);
+    GST_DEBUG_OBJECT (render, "dvdsub_overlay filter %" GST_PTR_FORMAT,
+        dvdsub_overlay_filter);
+  }
 
-  /* we can do what the peer can */
-  caps = gst_pad_peer_query_caps (otherpad, filter);
-  if (caps) {
-    GstCaps *temp;
+  peer_caps = gst_pad_peer_query_caps (srcpad, dvdsub_overlay_filter);
 
-    /* filtered against our padtemplate */
-    temp = gst_caps_intersect (caps, templ);
-    gst_caps_unref (templ);
-    gst_caps_unref (caps);
-    /* this is what we can do */
-    caps = temp;
+  if (dvdsub_overlay_filter)
+    gst_caps_unref (dvdsub_overlay_filter);
+
+  if (peer_caps) {
+
+    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
+
+    if (gst_caps_is_any (peer_caps)) {
+
+      /* if peer returns ANY caps, return filtered src pad template caps */
+      caps = gst_pad_get_pad_template_caps (srcpad);
+
+    } else {
+
+      /* duplicate caps which contains the composition into one version with
+       * the meta and one without. Filter the other caps by the software caps */
+      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+      caps = gst_dvbsub_overlay_intersect_by_feature (peer_caps,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+      gst_caps_unref (sw_caps);
+    }
+
+    gst_caps_unref (peer_caps);
+
   } else {
     /* no peer, our padtemplate is enough then */
-    caps = templ;
+    caps = gst_pad_get_pad_template_caps (pad);
   }
+
+  if (filter) {
+    GstCaps *intersection;
+
+    intersection =
+        gst_caps_intersect_full (filter, caps, GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (caps);
+    caps = intersection;
+  }
+
+  GST_DEBUG_OBJECT (render, "returning  %" GST_PTR_FORMAT, caps);
 
   return caps;
 }
 
+static GstCaps *
+gst_dvbsub_overlay_get_src_caps (GstDVBSubOverlay * render, GstPad * pad,
+    GstCaps * filter)
+{
+  GstPad *sinkpad = render->video_sinkpad;
+  GstCaps *peer_caps = NULL, *caps = NULL, *dvdsub_overlay_filter = NULL;
+
+  if (filter) {
+    /* duplicate filter caps which contains the composition into one version
+     * with the meta and one without. Filter the other caps by the software
+     * caps */
+    GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+    dvdsub_overlay_filter =
+        gst_dvbsub_overlay_intersect_by_feature (filter,
+        GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+    gst_caps_unref (sw_caps);
+  }
+
+  peer_caps = gst_pad_peer_query_caps (sinkpad, dvdsub_overlay_filter);
+
+  if (dvdsub_overlay_filter)
+    gst_caps_unref (dvdsub_overlay_filter);
+
+  if (peer_caps) {
+
+    GST_DEBUG_OBJECT (pad, "peer caps  %" GST_PTR_FORMAT, peer_caps);
+
+    if (gst_caps_is_any (peer_caps)) {
+
+      /* if peer returns ANY caps, return filtered sink pad template caps */
+      caps = gst_pad_get_pad_template_caps (sinkpad);
+    } else {
+
+      /* return upstream caps + composition feature + upstream caps
+       * filtered by the software caps. */
+      GstCaps *sw_caps = gst_static_caps_get (&sw_template_caps);
+      caps = gst_dvbsub_overlay_add_feature_and_intersect (peer_caps,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, sw_caps);
+      gst_caps_unref (sw_caps);
+    }
+
+    gst_caps_unref (peer_caps);
+
+  } else {
+    /* no peer, our padtemplate is enough then */
+    caps = gst_pad_get_pad_template_caps (pad);
+  }
+
+  if (filter) {
+    GstCaps *intersection = gst_caps_intersect_full (filter, caps,
+        GST_CAPS_INTERSECT_FIRST);
+    gst_caps_unref (caps);
+    caps = intersection;
+  }
+
+  GST_DEBUG_OBJECT (render, "returning  %" GST_PTR_FORMAT, caps);
+
+  return caps;
+}
+
+static gboolean
+gst_dvbsub_overlay_can_handle_caps (GstCaps * incaps)
+{
+  gboolean ret;
+  GstCaps *caps;
+  GstStaticCaps static_caps = GST_STATIC_CAPS (DVBSUB_OVERLAY_CAPS);
+
+  caps = gst_static_caps_get (&static_caps);
+  ret = gst_caps_is_subset (incaps, caps);
+  gst_caps_unref (caps);
+
+  return ret;
+}
+
 /* only negotiate/query video overlay composition support for now */
 static gboolean
-gst_dvbsub_overlay_negotiate (GstDVBSubOverlay * overlay)
+gst_dvbsub_overlay_negotiate (GstDVBSubOverlay * overlay, GstCaps * caps)
 {
-  GstCaps *target;
-  GstQuery *query;
+  gboolean ret;
   gboolean attach = FALSE;
+  gboolean caps_has_meta = TRUE;
+  GstCapsFeatures *f;
 
   GST_DEBUG_OBJECT (overlay, "performing negotiation");
 
-  target = gst_pad_get_current_caps (overlay->srcpad);
-
-  if (!target || gst_caps_is_empty (target))
-    goto no_format;
-
-  /* find supported meta */
-  query = gst_query_new_allocation (target, TRUE);
-
-  if (!gst_pad_peer_query (overlay->srcpad, query)) {
-    /* no problem, we use the query defaults */
-    GST_DEBUG_OBJECT (overlay, "ALLOCATION query failed");
+  if (!caps) {
+    caps = gst_pad_get_current_caps (overlay->srcpad);
+  } else {
+    gst_caps_ref (caps);
   }
 
-  if (gst_query_find_allocation_meta (query,
-          GST_VIDEO_OVERLAY_COMPOSITION_META_API_TYPE, NULL))
-    attach = TRUE;
+  if (!caps || gst_caps_is_empty (caps))
+    goto no_format;
 
-  overlay->attach_compo_to_buffer = attach;
+  /* Try to use the overlay meta if possible */
+  f = gst_caps_get_features (caps, 0);
 
-  gst_query_unref (query);
-  gst_caps_unref (target);
+  /* if the caps doesn't have the overlay meta, we query if downstream
+   * accepts it before trying the version without the meta
+   * If upstream already is using the meta then we can only use it */
+  if (!f
+      || !gst_caps_features_contains (f,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION)) {
+    GstCaps *overlay_caps;
 
-  return TRUE;
+    /* In this case we added the meta, but we can work without it
+     * so preserve the original caps so we can use it as a fallback */
+    overlay_caps = gst_caps_copy (caps);
+
+    f = gst_caps_get_features (overlay_caps, 0);
+    if (f == NULL) {
+      f = gst_caps_features_new
+          (GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION, NULL);
+    } else {
+      gst_caps_features_add (f,
+          GST_CAPS_FEATURE_META_GST_VIDEO_OVERLAY_COMPOSITION);
+    }
+
+    ret = gst_pad_peer_query_accept_caps (overlay->srcpad, overlay_caps);
+    GST_DEBUG_OBJECT (overlay, "Downstream accepts the overlay meta: %d", ret);
+    if (ret) {
+      gst_caps_unref (caps);
+      caps = overlay_caps;
+
+    } else {
+      /* fallback to the original */
+      gst_caps_unref (overlay_caps);
+      caps_has_meta = FALSE;
+    }
+
+  }
+  GST_DEBUG_OBJECT (overlay, "Using caps %" GST_PTR_FORMAT, caps);
+  ret = gst_pad_set_caps (overlay->srcpad, caps);
+
+  if (ret) {
+    GstQuery *query;
+
+    /* find supported meta */
+    query = gst_query_new_allocation (caps, TRUE);
+
+    if (!gst_pad_peer_query (overlay->srcpad, query)) {
+      /* no problem, we use the query defaults */
+      GST_DEBUG_OBJECT (overlay, "ALLOCATION query failed");
+    }
+
+    if (caps_has_meta && gst_query_find_allocation_meta (query,
+            GST_VIDEO_OVERLAY_COMPOSITION_META_API_TYPE, NULL))
+      attach = TRUE;
+
+    overlay->attach_compo_to_buffer = attach;
+
+    gst_query_unref (query);
+  }
+  gst_caps_unref (caps);
+
+  return ret;
 
 no_format:
   {
-    if (target)
-      gst_caps_unref (target);
+    if (caps)
+      gst_caps_unref (caps);
     return FALSE;
   }
 }
@@ -515,13 +759,13 @@ gst_dvbsub_overlay_setcaps_video (GstPad * pad, GstCaps * caps)
 
   render->info = info;
 
-  ret = gst_pad_set_caps (render->srcpad, caps);
-  if (!ret)
-    goto out;
+  ret = gst_dvbsub_overlay_negotiate (render, caps);
 
-  gst_dvbsub_overlay_negotiate (render);
+  if (!render->attach_compo_to_buffer &&
+      !gst_dvbsub_overlay_can_handle_caps (caps))
+    goto unsupported_caps;
 
-  GST_DEBUG_OBJECT (render, "ass renderer setup complete");
+  GST_DEBUG_OBJECT (render, "dvbsub overlay renderer setup complete");
 
 out:
   gst_object_unref (render);
@@ -532,6 +776,12 @@ out:
 invalid_caps:
   {
     GST_ERROR_OBJECT (render, "Can't parse caps: %" GST_PTR_FORMAT, caps);
+    ret = FALSE;
+    goto out;
+  }
+unsupported_caps:
+  {
+    GST_ERROR_OBJECT (render, "Unsupported caps: %" GST_PTR_FORMAT, caps);
     ret = FALSE;
     goto out;
   }
@@ -933,7 +1183,7 @@ gst_dvbsub_overlay_query_video (GstPad * pad, GstObject * parent,
       GstCaps *filter, *caps;
 
       gst_query_parse_caps (query, &filter);
-      caps = gst_dvbsub_overlay_getcaps (render, pad, filter);
+      caps = gst_dvbsub_overlay_get_videosink_caps (render, pad, filter);
       gst_query_set_caps_result (query, caps);
       gst_caps_unref (caps);
       ret = TRUE;
@@ -1053,6 +1303,10 @@ gst_dvbsub_overlay_event_text (GstPad * pad, GstObject * parent,
       break;
     case GST_EVENT_EOS:
       GST_INFO_OBJECT (render, "text EOS");
+      gst_event_unref (event);
+      ret = TRUE;
+      break;
+    case GST_EVENT_GAP:
       gst_event_unref (event);
       ret = TRUE;
       break;

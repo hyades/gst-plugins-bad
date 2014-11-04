@@ -95,6 +95,7 @@ gst_siren_dec_class_init (GstSirenDecClass * klass)
 static void
 gst_siren_dec_init (GstSirenDec * dec)
 {
+  gst_audio_decoder_set_needs_format (GST_AUDIO_DECODER (dec), TRUE);
 }
 
 static gboolean
@@ -164,7 +165,10 @@ gst_siren_dec_handle_frame (GstAudioDecoder * bdec, GstBuffer * buf)
   GstBuffer *out_buf;
   guint8 *in_data, *out_data;
   guint i, size, num_frames;
-  gint out_size, in_size;
+  gint out_size;
+#ifndef GST_DISABLE_GST_DEBUG
+  gint in_size;
+#endif
   gint decode_ret;
   GstMapInfo inmap, outmap;
 
@@ -181,7 +185,9 @@ gst_siren_dec_handle_frame (GstAudioDecoder * bdec, GstBuffer * buf)
   num_frames = size / 40;
 
   /* this is the input/output size */
+#ifndef GST_DISABLE_GST_DEBUG
   in_size = num_frames * 40;
+#endif
   out_size = num_frames * 640;
 
   GST_LOG_OBJECT (dec, "we have %u frames, %u in, %u out", num_frames, in_size,

@@ -91,13 +91,13 @@ enum
 static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("RGB"))
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("BGR"))
     );
 
 static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("RGB"))
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE ("BGR"))
     );
 
 G_DEFINE_TYPE (GstTemplateMatch, gst_template_match, GST_TYPE_ELEMENT);
@@ -169,8 +169,10 @@ gst_template_match_init (GstTemplateMatch * filter)
       GST_DEBUG_FUNCPTR (gst_template_match_handle_sink_event));
   gst_pad_set_chain_function (filter->sinkpad,
       GST_DEBUG_FUNCPTR (gst_template_match_chain));
+  GST_PAD_SET_PROXY_CAPS (filter->sinkpad);
 
   filter->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
+  GST_PAD_SET_PROXY_CAPS (filter->srcpad);
 
   gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
   gst_element_add_pad (GST_ELEMENT (filter), filter->srcpad);
@@ -266,6 +268,9 @@ gst_template_match_handle_sink_event (GstPad * pad, GstObject * parent,
       gst_event_parse_caps (event, &caps);
       gst_video_info_from_caps (&info, caps);
 
+      if (filter->cvImage) {
+        cvReleaseImageHeader (&filter->cvImage);
+      }
       filter->cvImage =
           cvCreateImageHeader (cvSize (info.width, info.height), IPL_DEPTH_8U,
           3);
@@ -406,6 +411,10 @@ static void
 gst_template_match_load_template (GstTemplateMatch * filter)
 {
   if (filter->template) {
+
+    if (filter->cvTemplateImage) {
+      cvReleaseImage (&filter->cvTemplateImage);
+    }
     filter->cvTemplateImage =
         cvLoadImage (filter->template, CV_LOAD_IMAGE_COLOR);
 

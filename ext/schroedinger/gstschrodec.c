@@ -83,7 +83,7 @@ static void gst_schro_dec_finalize (GObject * object);
 
 static gboolean gst_schro_dec_start (GstVideoDecoder * dec);
 static gboolean gst_schro_dec_stop (GstVideoDecoder * dec);
-static gboolean gst_schro_dec_reset (GstVideoDecoder * dec, gboolean hard);
+static gboolean gst_schro_dec_flush (GstVideoDecoder * dec);
 static GstFlowReturn gst_schro_dec_parse (GstVideoDecoder *
     base_video_decoder, GstVideoCodecFrame * frame, GstAdapter * adapter,
     gboolean at_eos);
@@ -135,7 +135,7 @@ gst_schro_dec_class_init (GstSchroDecClass * klass)
 
   base_video_decoder_class->start = GST_DEBUG_FUNCPTR (gst_schro_dec_start);
   base_video_decoder_class->stop = GST_DEBUG_FUNCPTR (gst_schro_dec_stop);
-  base_video_decoder_class->reset = GST_DEBUG_FUNCPTR (gst_schro_dec_reset);
+  base_video_decoder_class->flush = GST_DEBUG_FUNCPTR (gst_schro_dec_flush);
   base_video_decoder_class->parse = GST_DEBUG_FUNCPTR (gst_schro_dec_parse);
   base_video_decoder_class->handle_frame =
       GST_DEBUG_FUNCPTR (gst_schro_dec_handle_frame);
@@ -168,17 +168,16 @@ gst_schro_dec_stop (GstVideoDecoder * dec)
 }
 
 static gboolean
-gst_schro_dec_reset (GstVideoDecoder * dec, gboolean hard)
+gst_schro_dec_flush (GstVideoDecoder * dec)
 {
   GstSchroDec *schro_dec;
 
   schro_dec = GST_SCHRO_DEC (dec);
 
-  GST_DEBUG ("reset");
+  GST_DEBUG ("flush");
 
-  if (schro_dec->decoder) {
+  if (schro_dec->decoder)
     schro_decoder_reset (schro_dec->decoder);
-  }
 
   return TRUE;
 }
@@ -499,8 +498,7 @@ gst_schro_dec_process (GstSchroDec * schro_dec, gboolean eos)
 
           schro_frame_unref (schro_frame);
         }
-        if (tag)
-          schro_tag_free (tag);
+        schro_tag_free (tag);
         if (!eos) {
           go = FALSE;
         }
@@ -575,7 +573,7 @@ gst_schro_dec_decide_allocation (GstVideoDecoder * decoder, GstQuery * query)
     gst_buffer_pool_config_add_option (config,
         GST_BUFFER_POOL_OPTION_VIDEO_META);
   }
-
+  gst_buffer_pool_set_config (pool, config);
   gst_object_unref (pool);
 
   return TRUE;

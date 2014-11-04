@@ -533,8 +533,6 @@ gst_uvc_h264_src_init (GstUvcH264Src * self)
   g_signal_connect (self->vfsrc, "unlinked",
       (GCallback) gst_uvc_h264_src_pad_linking_cb, self);
 
-  self->vid_newseg = FALSE;
-  self->vf_newseg = FALSE;
   self->v4l2_fd = -1;
   gst_base_camera_src_set_mode (GST_BASE_CAMERA_SRC (self), MODE_VIDEO);
 
@@ -589,6 +587,12 @@ gst_uvc_h264_src_dispose (GObject * object)
   if (self->usb_ctx)
     libusb_exit (self->usb_ctx);
   self->usb_ctx = NULL;
+  g_free (self->jpeg_decoder_name);
+  self->jpeg_decoder_name = NULL;
+  g_free (self->colorspace_name);
+  self->colorspace_name = NULL;
+  g_free (self->device);
+  self->device = NULL;
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
@@ -1384,121 +1388,157 @@ gst_uvc_h264_src_get_int_setting (GstUvcH264Src * self, gchar * property,
     ret = probe_setting (self, UVCX_VIDEO_CONFIG_PROBE,
         offsetof (uvcx_video_config_probe_commit_t, dwBitRate), 4,
         &min32, &def32, &max32);
-    *min = min32;
-    *def = def32;
-    *max = max32;
+    if (ret) {
+      *min = min32;
+      *def = def32;
+      *max = max32;
+    }
   } else if (g_strcmp0 (property, "slice-units") == 0) {
     ret = probe_setting (self, UVCX_VIDEO_CONFIG_PROBE,
         offsetof (uvcx_video_config_probe_commit_t, wSliceUnits), 2,
         &min16, &def16, &max16);
-    *min = min16;
-    *def = def16;
-    *max = max16;
+    if (ret) {
+      *min = min16;
+      *def = def16;
+      *max = max16;
+    }
   } else if (g_strcmp0 (property, "iframe-period") == 0) {
     ret = probe_setting (self, UVCX_VIDEO_CONFIG_PROBE,
         offsetof (uvcx_video_config_probe_commit_t, wIFramePeriod), 2,
         &min16, &def16, &max16);
-    *min = min16;
-    *def = def16;
-    *max = max16;
+    if (ret) {
+      *min = min16;
+      *def = def16;
+      *max = max16;
+    }
   } else if (g_strcmp0 (property, "num-reorder-frames") == 0) {
     ret = probe_setting (self, UVCX_VIDEO_CONFIG_PROBE,
         offsetof (uvcx_video_config_probe_commit_t, bNumOfReorderFrames), 1,
         &min8, &def8, &max8);
-    *min = min8;
-    *def = def8;
-    *max = max8;
+    if (ret) {
+      *min = min8;
+      *def = def8;
+      *max = max8;
+    }
   } else if (g_strcmp0 (property, "leaky-bucket-size") == 0) {
     ret = probe_setting (self, UVCX_VIDEO_CONFIG_PROBE,
         offsetof (uvcx_video_config_probe_commit_t, wLeakyBucketSize), 2,
         &min16, &def16, &max16);
-    *min = min16;
-    *def = def16;
-    *max = max16;
+    if (ret) {
+      *min = min16;
+      *def = def16;
+      *max = max16;
+    }
   } else if (g_strcmp0 (property, "level-idc") == 0) {
     ret = probe_setting (self, UVCX_VIDEO_ADVANCE_CONFIG,
         offsetof (uvcx_video_advance_config_t, blevel_idc), 1,
         &min8, &def8, &max8);
-    *min = min8;
-    *def = def8;
-    *max = max8;
+    if (ret) {
+      *min = min8;
+      *def = def8;
+      *max = max8;
+    }
   } else if (g_strcmp0 (property, "max-mbps") == 0) {
     ret = probe_setting (self, UVCX_VIDEO_ADVANCE_CONFIG,
         offsetof (uvcx_video_advance_config_t, dwMb_max), 4,
         &min32, &def32, &max32);
-    *min = min32;
-    *def = def32;
-    *max = max32;
+    if (ret) {
+      *min = min32;
+      *def = def32;
+      *max = max32;
+    }
   } else if (g_strcmp0 (property, "peak-bitrate") == 0) {
     ret = probe_setting (self, UVCX_BITRATE_LAYERS,
         offsetof (uvcx_bitrate_layers_t, dwPeakBitrate), 4,
         &min32, &def32, &max32);
-    *min = min32;
-    *def = def32;
-    *max = max32;
+    if (ret) {
+      *min = min32;
+      *def = def32;
+      *max = max32;
+    }
   } else if (g_strcmp0 (property, "average-bitrate") == 0) {
     ret = probe_setting (self, UVCX_BITRATE_LAYERS,
         offsetof (uvcx_bitrate_layers_t, dwAverageBitrate), 4,
         &min32, &def32, &max32);
-    *min = min32;
-    *def = def32;
-    *max = max32;
+    if (ret) {
+      *min = min32;
+      *def = def32;
+      *max = max32;
+    }
   } else if (g_strcmp0 (property, "min-iframe-qp") == 0) {
     if (update_qp (self, QP_I_FRAME))
       ret = probe_setting (self, UVCX_QP_STEPS_LAYERS,
           offsetof (uvcx_qp_steps_layers_t, bMinQp), 1, &smin8, &sdef8, &smax8);
-    *min = smin8;
-    *def = sdef8;
-    *max = smax8;
+    if (ret) {
+      *min = smin8;
+      *def = sdef8;
+      *max = smax8;
+    }
   } else if (g_strcmp0 (property, "max-iframe-qp") == 0) {
     if (update_qp (self, QP_I_FRAME))
       ret = probe_setting (self, UVCX_QP_STEPS_LAYERS,
           offsetof (uvcx_qp_steps_layers_t, bMaxQp), 1, &smin8, &sdef8, &smax8);
-    *min = smin8;
-    *def = sdef8;
-    *max = smax8;
+    if (ret) {
+      *min = smin8;
+      *def = sdef8;
+      *max = smax8;
+    }
   } else if (g_strcmp0 (property, "min-pframe-qp") == 0) {
     if (update_qp (self, QP_P_FRAME))
       ret = probe_setting (self, UVCX_QP_STEPS_LAYERS,
           offsetof (uvcx_qp_steps_layers_t, bMinQp), 1, &smin8, &sdef8, &smax8);
-    *min = smin8;
-    *def = sdef8;
-    *max = smax8;
+    if (ret) {
+      *min = smin8;
+      *def = sdef8;
+      *max = smax8;
+    }
   } else if (g_strcmp0 (property, "max-pframe-qp") == 0) {
     if (update_qp (self, QP_P_FRAME))
       ret = probe_setting (self, UVCX_QP_STEPS_LAYERS,
           offsetof (uvcx_qp_steps_layers_t, bMaxQp), 1, &smin8, &sdef8, &smax8);
-    *min = smin8;
-    *def = sdef8;
-    *max = smax8;
+    if (ret) {
+      *min = smin8;
+      *def = sdef8;
+      *max = smax8;
+    }
   } else if (g_strcmp0 (property, "min-bframe-qp") == 0) {
     if (update_qp (self, QP_B_FRAME))
       ret = probe_setting (self, UVCX_QP_STEPS_LAYERS,
           offsetof (uvcx_qp_steps_layers_t, bMinQp), 1, &smin8, &sdef8, &smax8);
-    *min = smin8;
-    *def = sdef8;
-    *max = smax8;
+    if (ret) {
+      *min = smin8;
+      *def = sdef8;
+      *max = smax8;
+    }
   } else if (g_strcmp0 (property, "max-bframe-qp") == 0) {
     if (update_qp (self, QP_B_FRAME))
       ret = probe_setting (self, UVCX_QP_STEPS_LAYERS,
           offsetof (uvcx_qp_steps_layers_t, bMaxQp), 1, &smin8, &sdef8, &smax8);
-    *min = smin8;
-    *def = sdef8;
-    *max = smax8;
+    if (ret) {
+      *min = smin8;
+      *def = sdef8;
+      *max = smax8;
+    }
   } else if (g_strcmp0 (property, "ltr-buffer-size") == 0) {
     ret = probe_setting (self, UVCX_LTR_BUFFER_SIZE_CONTROL,
         offsetof (uvcx_ltr_buffer_size_control_t, bLTRBufferSize), 1,
         &min8, &def8, &max8);
-    *min = min8;
-    *def = def8;
-    *max = max8;
+    if (ret) {
+      *min = min8;
+      *def = def8;
+      *max = max8;
+    }
   } else if (g_strcmp0 (property, "ltr-encoder-control") == 0) {
     ret = probe_setting (self, UVCX_LTR_BUFFER_SIZE_CONTROL,
         offsetof (uvcx_ltr_buffer_size_control_t, bLTREncoderControl), 1,
         &min8, &def8, &max8);
-    *min = min8;
-    *def = def8;
-    *max = max8;
+    if (ret) {
+      *min = min8;
+      *def = def8;
+      *max = max8;
+    }
+  } else {
+    g_return_val_if_reached (FALSE);
   }
 
   return ret;
@@ -1515,15 +1555,6 @@ gst_uvc_h264_src_event_probe (GstPad * pad, GstPadProbeInfo * info,
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_EOS:
       ret = self->reconfiguring ? GST_PAD_PROBE_DROP : GST_PAD_PROBE_OK;
-      break;
-    case GST_EVENT_SEGMENT:
-      if (pad == self->vidsrc) {
-        ret = self->vid_newseg ? GST_PAD_PROBE_DROP : GST_PAD_PROBE_OK;
-        self->vid_newseg = TRUE;
-      } else if (pad == self->vfsrc) {
-        ret = self->vf_newseg ? GST_PAD_PROBE_DROP : GST_PAD_PROBE_OK;
-        self->vf_newseg = TRUE;
-      }
       break;
     default:
       break;
@@ -1725,7 +1756,7 @@ gst_uvc_h264_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 
   switch (GST_EVENT_TYPE (event)) {
     case GST_EVENT_SEGMENT:
-      if (!self->vid_newseg && pad == self->vidsrc) {
+      if (pad == self->vidsrc) {
         const GstSegment *s;
 
         gst_event_parse_segment (event, &s);
@@ -1733,12 +1764,8 @@ gst_uvc_h264_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
       }
       break;
     case GST_EVENT_FLUSH_STOP:
-      if (pad == self->vidsrc) {
+      if (pad == self->vidsrc)
         gst_segment_init (&self->segment, GST_FORMAT_UNDEFINED);
-        self->vid_newseg = FALSE;
-      }
-      if (pad == self->vfsrc)
-        self->vf_newseg = FALSE;
       break;
     default:
       if (gst_uvc_h264_src_parse_event (self, pad, event))
@@ -1824,6 +1851,7 @@ xu_get_id (GstUvcH264Src * self)
 
                   GST_DEBUG_OBJECT (self, "Found H264 XU unit : %d", unit_id);
 
+                  libusb_free_config_descriptor (config);
                   libusb_unref_device (device);
                   return unit_id;
                 }
@@ -1831,6 +1859,7 @@ xu_get_id (GstUvcH264Src * self)
               }
             }
           }
+          libusb_free_config_descriptor (config);
         }
       }
     }
@@ -2557,8 +2586,10 @@ gst_uvc_h264_src_construct_pipeline (GstBaseCameraSrc * bcamsrc)
   gst_ghost_pad_set_target (GST_GHOST_PAD (self->vidsrc), NULL);
   gst_ghost_pad_set_target (GST_GHOST_PAD (self->vfsrc), NULL);
 
-  vf_caps = gst_pad_peer_query_caps (self->vfsrc, NULL);
-  vid_caps = gst_pad_peer_query_caps (self->vidsrc, NULL);
+  if (gst_pad_is_linked (self->vfsrc))
+    vf_caps = gst_pad_peer_query_caps (self->vfsrc, NULL);
+  if (gst_pad_is_linked (self->vidsrc))
+    vid_caps = gst_pad_peer_query_caps (self->vidsrc, NULL);
 
   GST_DEBUG_OBJECT (self, "vfsrc caps : %" GST_PTR_FORMAT, vf_caps);
   GST_DEBUG_OBJECT (self, "vidsrc caps : %" GST_PTR_FORMAT, vid_caps);
@@ -2703,6 +2734,8 @@ gst_uvc_h264_src_construct_pipeline (GstBaseCameraSrc * bcamsrc)
       self->secondary_format = UVC_H264_SRC_FORMAT_RAW;
     } else {
       g_assert_not_reached ();
+      type = NONE_NONE;
+      self->main_format = UVC_H264_SRC_FORMAT_NONE;
     }
   } else {
     type = NONE_NONE;
@@ -3134,10 +3167,6 @@ gst_uvc_h264_src_change_state (GstElement * element, GstStateChange trans)
     goto end;
 
   switch (trans) {
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      self->vid_newseg = FALSE;
-      self->vf_newseg = FALSE;
-      break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       gst_uvc_h264_src_destroy_pipeline (self, TRUE);
       break;

@@ -136,9 +136,12 @@ gst_rtmp_sink_init (GstRTMPSink * sink)
 static void
 gst_rtmp_sink_finalize (GObject * object)
 {
+  GstRTMPSink *sink = GST_RTMP_SINK (object);
+
 #ifdef G_OS_WIN32
   WSACleanup ();
 #endif
+  g_free (sink->uri);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -313,7 +316,7 @@ gst_rtmp_sink_uri_set_uri (GstURIHandler * handler, const gchar * uri,
     AVal playpath, app;
 
     if (!RTMP_ParseURL (uri, &protocol, &host, &port, &playpath, &app) ||
-        !host.av_len || !playpath.av_len) {
+        !host.av_len) {
       GST_ELEMENT_ERROR (sink, RESOURCE, OPEN_WRITE,
           ("Failed to parse URI %s", uri), (NULL));
       g_set_error (error, GST_URI_ERROR, GST_URI_ERROR_BAD_URI,

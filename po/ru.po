@@ -3,25 +3,135 @@
 #
 # Артём Попов <artfwo@gmail.com>, 2009.
 # Pavel Maryanov <acid_jack@ukr.net>, 2009.
-# Yuri Kozlov <yuray@komyakino.ru>, 2011.
+# Yuri Kozlov <yuray@komyakino.ru>, 2011, 2013, 2014.
 msgid ""
 msgstr ""
-"Project-Id-Version: gst-plugins-bad 0.10.21.2\n"
+"Project-Id-Version: gst-plugins-bad 1.4.1\n"
 "Report-Msgid-Bugs-To: http://bugzilla.gnome.org/\n"
-"POT-Creation-Date: 2012-06-07 16:21+0200\n"
-"PO-Revision-Date: 2011-04-26 20:31+0400\n"
+"POT-Creation-Date: 2014-09-24 11:38+0300\n"
+"PO-Revision-Date: 2014-09-06 10:56+0400\n"
 "Last-Translator: Yuri Kozlov <yuray@komyakino.ru>\n"
 "Language-Team: Russian <gnu@mx.ru>\n"
 "Language: ru\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Lokalize 1.0\n"
+"X-Generator: Lokalize 1.5\n"
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n"
 "%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
+msgid "Internal data stream error."
+msgstr "Внутренняя ошибка потока данных."
+
+msgid "format wasn't negotiated before get function"
+msgstr "перед функцией получения не был согласован формат"
+
+msgid "default GStreamer sound events audiosink"
+msgstr "GStreamer audiosink по умолчанию для звуковых событий"
+
+msgid ""
+"GStreamer can play audio using any number of output elements. Some possible "
+"choices are osssink, pulsesink and alsasink. The audiosink can be a partial "
+"pipeline instea of just one element."
+msgstr ""
+"GStreamer может воспроизводить аудио через любой выходной элемент. Некоторые "
+"варианты: osssink, pulsesink и alsasink. Аudiosink может быть конвейером, а "
+"не одиночным элементом."
+
+msgid "description for default GStreamer sound events audiosink"
+msgstr "описание GStreamer audiosink по умолчанию для звуковых событий"
+
+msgid "Describes the selected audiosink element."
+msgstr "Описывает выбранный элемент audiosink."
+
+msgid "default GStreamer audiosink for Audio/Video Conferencing"
+msgstr "GStreamer audiosink по умолчанию для аудио-видео конференций"
+
+msgid ""
+"description for default GStreamer audiosink for Audio/Video Conferencing"
+msgstr "описание GStreamer audiosink по умолчанию для аудио-видео конференций"
+
+msgid "default GStreamer audiosink for Music and Movies"
+msgstr "GStreamer audiosink по умолчанию для музыки и фильмов"
+
+msgid "description for default GStreamer audiosink for Music and Movies"
+msgstr "описание GStreamer audiosink по умолчанию для музыки и фильмов"
+
+msgid "default GStreamer videosink"
+msgstr "GStreamer videosink по умолчанию"
+
+msgid ""
+"GStreamer can play video using any number of output elements. Some possible "
+"choices are xvimagesink, ximagesink, sdlvideosink and aasink. The videosink "
+"can be a partial pipeline instead of just one element."
+msgstr ""
+"GStreamer может воспроизводить видео через любой выходной элемент. Некоторые "
+"варианты: xvimagesink, ximagesink, sdlvideosink и aasink. Videosink может "
+"быть конвейером, а не одиночным элементом."
+
+msgid "description for default GStreamer videosink"
+msgstr "описание GStreamer videosink по умолчанию"
+
+msgid "Describes the selected videosink element."
+msgstr "Описывает выбранный элемент videosink."
+
+msgid "default GStreamer audiosrc"
+msgstr "GStreamer audiosrc по умолчанию"
+
+msgid ""
+"GStreamer can record audio using any number of input elements. Some possible "
+"choices are osssrc, pulsesrc and alsasrc. The audio source can be a partial "
+"pipeline instead of just one element."
+msgstr ""
+"GStreamer может записывать аудио с любого входного элемента. Некоторые "
+"варианты: osssrc, pulsesrc и alsasrc. Источником аудио может быть конвейер, "
+"а не одиночный элемент."
+
+msgid "description for default GStreamer audiosrc"
+msgstr "описание GStreamer audiosrc по умолчанию"
+
+msgid "Describes the selected audiosrc element."
+msgstr "Описывает выбранный элемент audiosrc."
+
+msgid "default GStreamer videosrc"
+msgstr "GStreamer videosrc по умолчанию"
+
+msgid ""
+"GStreamer can record video from any number of input elements. Some possible "
+"choices are v4lsrc, v4l2src and videotestsrc. The video source can be a "
+"partial pipeline instead of just one element."
+msgstr ""
+"GStreamer может записывать видео с любого входного элемента. Некоторые "
+"варианты: v4lsrc, v4l2src и videotestsrc. Источником видео может быть "
+"конвейер, а не одиночный элемент."
+
+msgid "description for default GStreamer videosrc"
+msgstr "описание GStreamer videosrc по умолчанию"
+
+msgid "Describes the selected videosrc element."
+msgstr "Описывает выбранный элемент videosrc."
+
+msgid "default GStreamer visualization"
+msgstr "GStreamer visualization по умолчанию"
+
+msgid ""
+"GStreamer can put visualization plugins in a pipeline to transform audio "
+"streams in video frames. Some possible choices are goom, goom2k1 and "
+"synaesthesia. The visualization plugin can be a partial pipeline instead of "
+"just one element."
+msgstr ""
+"GStreamer может помещать модули визуализации для преобразования аудио "
+"потоков видео фрагментов. Некоторые варианты: goom, goom2k1 и synaesthesia. "
+"Модуль визуализации может быть конвейером, а не одиночным элементом."
+
+msgid "description for default GStreamer visualization"
+msgstr "описание GStreamer visualization по умолчанию"
+
+msgid "Describes the selected visualization element."
+msgstr "Описывает выбранный элемент visualization."
+
 msgid "Could not read title information for DVD."
-msgstr "Не удалось прочесть информацию о структуре DVD."
+msgstr "Не удалось прочитать информацию о структуре DVD."
 
 #, c-format
 msgid "Failed to open DVD device '%s'."
@@ -34,28 +144,69 @@ msgid ""
 "Could not read DVD. This may be because the DVD is encrypted and a DVD "
 "decryption library is not installed."
 msgstr ""
-"Не удалось прочесть DVD. Это могло произойти из-за того, что DVD закодирован "
-"и не установлена библиотека декодирования DVD."
+"Не удалось прочитать DVD. Это могло произойти из-за того, что DVD "
+"закодирован и не установлена библиотека декодирования DVD."
 
 msgid "Could not read DVD."
-msgstr "Не удалось прочесть DVD."
+msgstr "Не удалось прочитать DVD."
+
+msgid "This file contains no playable streams."
+msgstr "Файл не содержит воспроизводимых потоков."
+
+msgid "Couldn't get the Manifest's URI"
+msgstr "Не удалось получить URI манифеста"
+
+msgid "Failed to get fragment URL."
+msgstr "Ошибка при получении URL фрагмента."
+
+msgid "Couldn't download fragments"
+msgstr "Не удалось скачать фрагменты"
+
+msgid "Could not open sndfile stream for reading."
+msgstr "Не удалось открыть поток sndfile для чтения."
+
+msgid "Could not establish connection to sndio"
+msgstr "Не удалось установить соединение с sndio"
+
+msgid "Failed to query sndio capabilities"
+msgstr "Ошибка при запросе возможностей sndio"
+
+msgid "Could not configure sndio"
+msgstr "Не удалось настроить sndio"
+
+msgid "Could not start sndio"
+msgstr "Не удалось запустить sndio"
+
+msgid "Internal data flow error."
+msgstr "Внутренняя ошибка передачи данных."
+
+msgid "Generated file has a larger preroll time than its streams duration"
+msgstr ""
+"В сгенерированном файле время предпуска (preroll) больше чем длительность "
+"его потоков"
+
+#, c-format
+msgid "Missing element '%s' - check your GStreamer installation."
+msgstr "Отсутствует элемент «%s» — проверьте правильность установки GStreamer."
+
+msgid "File location is set to NULL, please set it to a valid filename"
+msgstr "Расположение файла равно NULL, укажите правильное имя файла"
+
+msgid "Subpicture format was not configured before data flow"
+msgstr "Не настроен формат субграфики (subpicture) до потока данных"
 
 msgid "No file name specified for writing."
 msgstr "Не указано имя файла для записи."
 
 #, c-format
-msgid "Could not open file \"%s\" for writing."
-msgstr "Не удалось открыть для записи файл «%s»."
-
-msgid "Internal data stream error."
-msgstr "Внутренняя ошибка потока данных."
+msgid "Given file name \"%s\" can't be converted to local file name encoding."
+msgstr ""
+"Указанное имя файла «%s» невозможно преобразовать в имя файла с локальной "
+"кодировкой."
 
 #, c-format
-msgid "Could not write to file \"%s\"."
-msgstr "Не удалось осуществить запись в файл «%s»."
-
-msgid "Internal data flow error."
-msgstr "Внутренняя ошибка передачи данных."
+msgid "Could not open file \"%s\" for writing."
+msgstr "Не удалось открыть для записи файл «%s»."
 
 #, c-format
 msgid "Device \"%s\" does not exist."
@@ -63,15 +214,36 @@ msgstr "Устройство «%s» не существует."
 
 #, c-format
 msgid "Could not open frontend device \"%s\"."
-msgstr "Не удалось открыть DVB-декодер «%s»."
+msgstr "Не удалось открыть клиентское устройство «%s»."
 
 #, c-format
 msgid "Could not get settings from frontend device \"%s\"."
-msgstr "Не удалось получить параметры DVB-декодера «%s»."
+msgstr "Не удалось получить параметры клиентского устройства «%s»."
+
+#, c-format
+msgid "Cannot enumerate delivery systems from frontend device \"%s\"."
+msgstr "Не удалось пронумеровать системы доставки клиентского устройства «%s»."
 
 #, c-format
 msgid "Could not open file \"%s\" for reading."
 msgstr "Не удалось открыть для чтения файл «%s»."
+
+msgid "Couldn't find DVB channel configuration file"
+msgstr "Не удалось найти файл настройки каналов DVB"
+
+#, c-format
+msgid "Couldn't load DVB channel configuration file: %s"
+msgstr "Не удалось загрузить файл настройки каналов DVB: %s"
+
+msgid "DVB channel configuration file doesn't contain any channels"
+msgstr "Файл настройки каналов DVB не содержит каналов"
+
+#, c-format
+msgid "Couldn't find details for DVB channel %s"
+msgstr "Не удалось найти настройки DVB-канала %s"
+
+#~ msgid "Could not write to file \"%s\"."
+#~ msgstr "Не удалось осуществить запись в файл «%s»."
 
 #~ msgid "Internal clock error."
 #~ msgstr "Внутренняя ошибка синхронизации."
@@ -292,9 +464,6 @@ msgstr "Не удалось открыть для чтения файл «%s»."
 
 #~ msgid "Virtual mixer output"
 #~ msgstr "Виртуальный выход микшера"
-
-#~ msgid "Virtual mixer channel configuration"
-#~ msgstr "Конфигурация виртуальных каналов микшера"
 
 #~ msgid ""
 #~ "Could not open audio device for playback. Device is being used by another "

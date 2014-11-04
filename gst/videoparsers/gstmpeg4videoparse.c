@@ -29,8 +29,8 @@
 #endif
 
 #include <string.h>
-#include <gst/base/gstbytereader.h>
-#include <gst/pbutils/codec-utils.h>
+#include <gst/base/base.h>
+#include <gst/pbutils/pbutils.h>
 #include <gst/video/video.h>
 
 #include "gstmpeg4videoparse.h"
@@ -187,6 +187,7 @@ gst_mpeg4vparse_init (GstMpeg4VParse * parse)
   parse->last_report = GST_CLOCK_TIME_NONE;
 
   gst_base_parse_set_pts_interpolation (GST_BASE_PARSE (parse), FALSE);
+  GST_PAD_SET_ACCEPT_INTERSECT (GST_BASE_PARSE_SINK_PAD (parse));
 }
 
 static void
@@ -210,6 +211,7 @@ gst_mpeg4vparse_reset (GstMpeg4VParse * mp4vparse)
   mp4vparse->level = NULL;
   mp4vparse->pending_key_unit_ts = GST_CLOCK_TIME_NONE;
   mp4vparse->force_key_unit_event = NULL;
+  mp4vparse->discont = FALSE;
 
   gst_buffer_replace (&mp4vparse->config, NULL);
   memset (&mp4vparse->vol, 0, sizeof (mp4vparse->vol));
@@ -246,9 +248,11 @@ gst_mpeg4vparse_process_config (GstMpeg4VParse * mp4vparse,
     const guint8 * data, guint offset, gsize size)
 {
   GstMpeg4VisualObject *vo;
+  GstMpeg4VideoObjectLayer vol = { 0 };
 
   /* only do stuff if something new */
   if (mp4vparse->config
+      && gst_buffer_get_size (mp4vparse->config) == size
       && !gst_buffer_memcmp (mp4vparse->config, offset, data, size))
     return TRUE;
 
@@ -262,11 +266,26 @@ gst_mpeg4vparse_process_config (GstMpeg4VParse * mp4vparse,
 
   /* If the parsing fail, we accept the config only if we don't have
    * any config yet. */
-  if (gst_mpeg4_parse_video_object_layer (&mp4vparse->vol,
+  if (gst_mpeg4_parse_video_object_layer (&vol,
           vo, data + mp4vparse->vol_offset,
           size - mp4vparse->vol_offset) != GST_MPEG4_PARSER_OK &&
       mp4vparse->config)
     return FALSE;
+
+  /* ignore update if nothing meaningful changed */
+  if (vol.height == mp4vparse->vol.height &&
+      vol.width == mp4vparse->vol.width &&
+      vol.vop_time_increment_resolution ==
+      mp4vparse->vol.vop_time_increment_resolution &&
+      vol.fixed_vop_time_increment == mp4vparse->vol.fixed_vop_time_increment &&
+      vol.par_width == mp4vparse->vol.par_width &&
+      vol.par_height == mp4vparse->vol.par_height &&
+      vol.sprite_enable == mp4vparse->vol.sprite_enable &&
+      vol.no_of_sprite_warping_points ==
+      mp4vparse->vol.no_of_sprite_warping_points)
+    return TRUE;
+
+  mp4vparse->vol = vol;
 
   GST_LOG_OBJECT (mp4vparse, "Width/Height: %u/%u, "
       "time increment resolution: %u fixed time increment: %u",
@@ -362,9 +381,14 @@ gst_mpeg4vparse_process_sc (GstMpeg4VParse * mp4vparse, GstMpeg4Packet * packet,
 
         GST_LOG_OBJECT (mp4vparse, "Video Object Layer");
 
-        /*  wee keep track of the offset to parse later on */
+        /* we keep track of the offset to parse later on */
         if (mp4vparse->vol_offset < 0)
           mp4vparse->vol_offset = packet->offset;
+
+        /* Video Object below is merely a start code,
+         * if that is considered as config, then certainly Video Object Layer
+         * which really contains some needed data */
+        mp4vparse->config_found = TRUE;
 
         /* VO (video object) cases */
       } else if (packet->type <= GST_MPEG4_VIDEO_OBJ_LAST) {
@@ -390,6 +414,11 @@ gst_mpeg4vparse_handle_frame (GstBaseParse * parse,
   gint off = 0;
   gboolean ret = FALSE;
   guint framesize = 0;
+
+  if (G_UNLIKELY (GST_BUFFER_FLAG_IS_SET (frame->buffer,
+              GST_BUFFER_FLAG_DISCONT))) {
+    mp4vparse->discont = TRUE;
+  }
 
   gst_buffer_map (frame->buffer, &map, GST_MAP_READ);
   data = map.data;
@@ -441,8 +470,11 @@ retry:
     default:
       if (packet.type <= GST_MPEG4_VIDEO_OBJ_LAST)
         break;
+      if (packet.type >= GST_MPEG4_VIDEO_LAYER_FIRST &&
+          packet.type <= GST_MPEG4_VIDEO_LAYER_LAST)
+        break;
       /* undesirable sc */
-      GST_LOG_OBJECT (mp4vparse, "start code is no VOS, VO, VOP or GOP");
+      GST_LOG_OBJECT (mp4vparse, "start code is no VOS, VO, VOL, VOP or GOP");
       goto retry;
   }
 
@@ -502,6 +534,10 @@ out:
     res = gst_mpeg4vparse_parse_frame (parse, frame);
     if (res == GST_BASE_PARSE_FLOW_DROPPED)
       frame->flags |= GST_BASE_PARSE_FRAME_FLAG_DROP;
+    if (G_UNLIKELY (mp4vparse->discont)) {
+      GST_BUFFER_FLAG_SET (frame->buffer, GST_BUFFER_FLAG_DISCONT);
+      mp4vparse->discont = FALSE;
+    }
     return gst_base_parse_finish_frame (parse, frame, framesize);
   }
 
@@ -514,12 +550,12 @@ gst_mpeg4vparse_update_src_caps (GstMpeg4VParse * mp4vparse)
   GstCaps *caps = NULL;
   GstStructure *s = NULL;
 
-  GST_LOG_OBJECT (mp4vparse, "Updating caps");
-
   /* only update if no src caps yet or explicitly triggered */
   if (G_LIKELY (gst_pad_has_current_caps (GST_BASE_PARSE_SRC_PAD (mp4vparse)) &&
           !mp4vparse->update_caps))
     return;
+
+  GST_LOG_OBJECT (mp4vparse, "Updating caps");
 
   /* carry over input caps as much as possible; override with our own stuff */
   caps = gst_pad_get_current_caps (GST_BASE_PARSE_SINK_PAD (mp4vparse));
@@ -683,6 +719,25 @@ gst_mpeg4vparse_pre_push_frame (GstBaseParse * parse, GstBaseParseFrame * frame)
   gboolean push_codec = FALSE;
   GstEvent *event = NULL;
 
+  if (!mp4vparse->sent_codec_tag) {
+    GstTagList *taglist;
+    GstCaps *caps;
+
+    taglist = gst_tag_list_new_empty ();
+
+    /* codec tag */
+    caps = gst_pad_get_current_caps (GST_BASE_PARSE_SRC_PAD (parse));
+    gst_pb_utils_add_codec_description_to_tag_list (taglist,
+        GST_TAG_VIDEO_CODEC, caps);
+    gst_caps_unref (caps);
+
+    gst_pad_push_event (GST_BASE_PARSE_SRC_PAD (mp4vparse),
+        gst_event_new_tag (taglist));
+
+    /* also signals the end of first-frame processing */
+    mp4vparse->sent_codec_tag = TRUE;
+  }
+
   if ((event = check_pending_key_unit_event (mp4vparse->force_key_unit_event,
               &parse->segment, GST_BUFFER_TIMESTAMP (buffer),
               GST_BUFFER_FLAGS (buffer), mp4vparse->pending_key_unit_ts))) {
@@ -805,6 +860,19 @@ gst_mpeg4vparse_set_caps (GstBaseParse * parse, GstCaps * caps)
   return TRUE;
 }
 
+static void
+remove_fields (GstCaps * caps)
+{
+  guint i, n;
+
+  n = gst_caps_get_size (caps);
+  for (i = 0; i < n; i++) {
+    GstStructure *s = gst_caps_get_structure (caps, i);
+
+    gst_structure_remove_field (s, "parsed");
+  }
+}
+
 
 static GstCaps *
 gst_mpeg4vparse_get_caps (GstBaseParse * parse, GstCaps * filter)
@@ -813,29 +881,23 @@ gst_mpeg4vparse_get_caps (GstBaseParse * parse, GstCaps * filter)
   GstCaps *res;
 
   templ = gst_pad_get_pad_template_caps (GST_BASE_PARSE_SINK_PAD (parse));
-  peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), filter);
+  if (filter) {
+    GstCaps *fcopy = gst_caps_copy (filter);
+    /* Remove the fields we convert */
+    remove_fields (fcopy);
+    peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), fcopy);
+    gst_caps_unref (fcopy);
+  } else
+    peercaps = gst_pad_peer_query_caps (GST_BASE_PARSE_SRC_PAD (parse), NULL);
 
   if (peercaps) {
-    guint i, n;
-
     /* Remove the parsed field */
     peercaps = gst_caps_make_writable (peercaps);
-    n = gst_caps_get_size (peercaps);
-    for (i = 0; i < n; i++) {
-      GstStructure *s = gst_caps_get_structure (peercaps, i);
-
-      gst_structure_remove_field (s, "parsed");
-    }
+    remove_fields (peercaps);
 
     res = gst_caps_intersect_full (peercaps, templ, GST_CAPS_INTERSECT_FIRST);
     gst_caps_unref (peercaps);
-    res = gst_caps_make_writable (res);
-
-    /* Append the template caps because we still want to accept
-     * caps without any fields in the case upstream does not
-     * know anything.
-     */
-    gst_caps_append (res, templ);
+    gst_caps_unref (templ);
   } else {
     res = templ;
   }

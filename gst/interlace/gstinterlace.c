@@ -501,23 +501,35 @@ gst_interlace_getcaps (GstPad * pad, GstInterlace * interlace, GstCaps * filter)
   GstPad *otherpad;
   GstCaps *othercaps, *tcaps;
   GstCaps *icaps;
+  GstCaps *clean_filter = NULL;
   const char *mode;
+  guint i;
 
   otherpad =
       (pad == interlace->srcpad) ? interlace->sinkpad : interlace->srcpad;
 
-  tcaps = gst_pad_get_pad_template_caps (otherpad);
-  othercaps = gst_pad_peer_query_caps (otherpad, filter);
+  if (filter != NULL) {
+    clean_filter = gst_caps_copy (filter);
+    for (i = 0; i < gst_caps_get_size (clean_filter); ++i) {
+      GstStructure *s;
 
+      s = gst_caps_get_structure (clean_filter, i);
+      gst_structure_remove_field (s, "interlace-mode");
+    }
+  }
+
+  tcaps = gst_pad_get_pad_template_caps (otherpad);
+  othercaps = gst_pad_peer_query_caps (otherpad, clean_filter);
   if (othercaps) {
     icaps = gst_caps_intersect (othercaps, tcaps);
     gst_caps_unref (othercaps);
+    gst_caps_unref (tcaps);
   } else {
     icaps = tcaps;
   }
 
-  if (filter) {
-    othercaps = gst_caps_intersect (icaps, filter);
+  if (clean_filter) {
+    othercaps = gst_caps_intersect (icaps, clean_filter);
     gst_caps_unref (icaps);
     icaps = othercaps;
   }
@@ -531,7 +543,8 @@ gst_interlace_getcaps (GstPad * pad, GstInterlace * interlace, GstCaps * filter)
   gst_caps_set_simple (icaps, "interlace-mode", G_TYPE_STRING,
       pad == interlace->srcpad ? mode : "progressive", NULL);
 
-  gst_caps_unref (tcaps);
+  if (clean_filter)
+    gst_caps_unref (clean_filter);
 
   return icaps;
 }

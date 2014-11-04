@@ -57,6 +57,7 @@ struct _GstAmcAudioDec
   GstCaps *input_caps;
   GList *codec_datas;
   gboolean input_caps_changed;
+  gint spf;
 
   /* Output format of the codec */
   GstAudioInfo info;
@@ -82,9 +83,6 @@ struct _GstAmcAudioDec
   gboolean eos;
 
   GstFlowReturn downstream_flow_ret;
-
-  /* Output buffers counter */
-  gint n_buffers;
 };
 
 struct _GstAmcAudioDecClass
